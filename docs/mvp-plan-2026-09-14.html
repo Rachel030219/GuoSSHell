@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="LXfTsLFmTtioNaNJolTLwi">
+<head data-page-node-id="2krGvfSKssfpUPK13d1NeZ">
+<meta charset="utf-8" data-page-node-id="Dw501yXv40mvdKt76FcTKM" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="ttvF9DYUlZi5qaTvQq2dV1" />
+<title>rsHell on iOS —— MVP 里程碑与 M0 交接单</title>
+<style>
+:root { color-scheme: light; --ink:#182434; --muted:#516173; --rule:#d9e2ea; --accent:#174a70; --ok:#0f6b46; --warn:#8a4b00; --bad:#a11d1d; --chip:#eef4f8; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { max-width: 1100px; margin: 0 auto; padding: 52px 56px 90px; color: var(--ink); background:#fff;
+       font: 16px/1.85 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+header { padding: 0 0 24px; margin-bottom: 28px; border-bottom: 5px solid var(--accent); }
+header h1 { font-size: 2.1rem; line-height: 1.35; margin: 0 0 6px; }
+header .meta { color: var(--muted); font-size: .93rem; }
+h1,h2,h3,h4 { line-height: 1.45; letter-spacing: .01em; }
+h2 { font-size: 1.46rem; margin-top: 2.6rem; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+h3 { font-size: 1.13rem; margin-top: 1.8rem; }
+h4 { font-size: 1rem; margin-top: 1.4rem; color: var(--accent); }
+p { margin: .8em 0; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+strong { font-weight: 650; }
+blockquote { margin: 20px 0; padding: 12px 20px; border-left: 4px solid var(--accent); background: #f0f5f9; }
+pre { overflow-x: auto; padding: 16px 18px; background: #f5f7f9; border: 1px solid var(--rule); border-radius: 4px; font-size: .82em; line-height: 1.6; }
+code { font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: .89em; overflow-wrap: anywhere; }
+p code, td code, li code { padding: 1px 4px; background: #f0f3f5; }
+table { border-collapse: collapse; width: 100%; font-size: .88em; line-height: 1.7; margin: 18px 0 24px; }
+th { background: #edf3f7; font-weight: 650; text-align: left; }
+th,td { border: 1px solid var(--rule); padding: 9px 12px; vertical-align: top; }
+tr:nth-child(even) td { background: #fafcfd; }
+ul,ol { padding-left: 1.5em; }
+li { margin: .38em 0; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 34px 0; }
+.chip { display:inline-block; padding:1px 8px; border-radius:10px; background:var(--chip); font-size:.78em; color:var(--muted); vertical-align:1px; }
+.ok { color: var(--ok); font-weight: 650; }
+.warn { color: var(--warn); font-weight: 650; }
+.bad { color: var(--bad); font-weight: 650; }
+.callout { margin: 22px 0; padding: 14px 20px; border: 1px solid var(--rule); border-left: 4px solid var(--ok); background: #f6fbf8; }
+.callout.warnbox { border-left-color: var(--warn); background: #fdf9f2; }
+.callout.badbox { border-left-color: var(--bad); background: #fdf5f5; }
+.callout .t { font-weight: 650; display:block; margin-bottom: 4px; }
+nav#TOC { background:#f7f9fb; border:1px solid var(--rule); padding: 20px 26px; margin: 24px 0 34px; }
+nav#TOC::before { content:"目录"; font-size:1.05rem; font-weight:650; display:block; margin-bottom:8px; }
+nav#TOC ul { columns:2; column-gap:30px; margin:0; font-size:.87rem; list-style:none; padding-left:0; }
+nav#TOC li { break-inside:avoid; margin:.22em 0; }
+nav#TOC a { text-decoration:none; }
+.evidence { border:1px solid var(--rule); border-radius:4px; margin:16px 0; overflow:hidden; }
+.evidence .hd { background:#eef3f7; padding:7px 14px; font-size:.82rem; color:var(--muted); font-family:ui-monospace,monospace; }
+.evidence pre { margin:0; border:0; border-radius:0; background:#fbfcfd; }
+.mile { border:1px solid var(--rule); border-radius:4px; margin:20px 0; overflow:hidden; }
+.mile > .head { background:#edf3f7; padding:10px 16px; font-weight:650; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+.mile > .head .tag { font-family:ui-monospace,monospace; font-size:.82rem; color:#fff; background:var(--accent); padding:1px 9px; border-radius:10px; }
+.mile > .body { padding: 4px 18px 14px; }
+.mile .gate { margin: 10px 0 0; padding: 9px 14px; background:#f6fbf8; border-left:3px solid var(--ok); font-size:.92em; }
+.mile .gate b { color: var(--ok); }
+.mile.done > .head { background:#eef7f2; }
+.mile.done > .head .tag { background: var(--ok); }
+@media (max-width:780px){ body{padding:26px 18px 60px; font-size:15px;} nav#TOC ul{columns:1;} table{display:block; overflow-x:auto;} }
+@media print { body{max-width:none; padding:0; font-size:10.5pt;} h2,h3{break-after:avoid;} tr,blockquote,.callout,.mile{break-inside:avoid;} nav#TOC{break-after:page;} }
+</style>
+</head>
+<body data-page-node-id="xb3WQpbixx8c9gdWJHfbWd">
+
+<header data-page-node-id="1oi1W3pE3dKnrLzhENJTYo">
+  <h1 data-page-node-id="howvEgLJzU5q9B162p8iG6">rsHell on iOS —— MVP 里程碑与 M0 交接单</h1>
+  <div class="meta" data-page-node-id="ctNYmzr0aA6jxov4BYifJv">
+    基线：<code data-page-node-id="IrALhQcXMlfyAHM9oj9Js3">hugefiver/rsHell</code>，<code data-page-node-id="AwPatmE09nXI6DO47gvIE0">master</code> @ <code data-page-node-id="BxpYVq9JXvdFEuJSnogfK7">b2ab8656079225dc2c920c24f5d9e0124f4f83e1</code>（2026-09-14）<br data-page-node-id="phvkaxypwk26WYRqFDX9dJ"/>
+    实测环境：macOS · Xcode 16.2 · iPhoneOS SDK 18.2 · cargo 交叉编译目标 <code data-page-node-id="oal540YyecDHdUu1EL5Tao">aarch64-apple-ios</code> / <code data-page-node-id="0Pl5shLQPVIJpDLfGWAmWj">aarch64-apple-ios-sim</code><br data-page-node-id="LCu6KA6vH8BU7zblUlx0CW"/>
+    文档日期：2026-09-14 &nbsp;|&nbsp; 配套：<code data-page-node-id="hh9rywukWkDTBr3dnmSVmI">rsHell_Flutter_iOS_Feasibility_2026-09-14.html</code>（可行性）、<code data-page-node-id="uv9VjUGidvAmOCg3jIdVmO">rshell-ios-m0/</code>（可运行代码）<br data-page-node-id="3ywP13HYZyuNr2XhaJiwE4"/>
+    约束前提：<strong data-page-node-id="TUjnpjC7N4iX0OSFxZBvEz">业务与终端语义继续跑在 Rust，能不改就不改；只有渲染、交互等必不可少的部分用 Flutter 重写；<u data-page-node-id="mWRgnSNCFtmwlxfYp0Bitu">不用 Dart 写业务逻辑</u></strong>
+  </div>
+</header>
+
+<nav id="TOC" data-page-node-id="pGaddpqGybRVOZGGZUui0R">
+<ul data-page-node-id="ouKdNfXseQKt4jSTvS8eWw">
+  <li data-page-node-id="EJx6DQvJEFE3CAJDKvFhYp"><a href="#v0" data-page-node-id="JRxydiCCDAsGARJ7h7CRTp">〇、结论先行：三个改变计划的发现</a></li>
+  <li data-page-node-id="jBNLgbBXihxsfoPjFiqOBQ"><a href="#ev" data-page-node-id="2yr5gmr4R4bDEJCliskvyi">一、M0 已经端到端跑通（本次新增实测）</a></li>
+  <li data-page-node-id="mNuBFiqUnecTP3IaqzMyue"><a href="#mile" data-page-node-id="lIDPLo6H9sCSgzZxKYcpX2">二、关键里程碑 M0–M4</a></li>
+  <li data-page-node-id="z84eJXrEAWWqXJsv66rZvD"><a href="#hand" data-page-node-id="0bFa6FRUFQxiV9VYWGUMRc">三、M0 交接单</a></li>
+  <li data-page-node-id="EiIlsNFoPywvyOkIH4MB0r"><a href="#reuse" data-page-node-id="oCuNyf3VrMv7BmFksZsMgN">四、复用 / 重写清单</a></li>
+  <li data-page-node-id="nYC4LB2k6RrXwgGICWhERz"><a href="#ledger" data-page-node-id="KblPn4fhZTcz7QD7oSFXnx">五、决策台账</a></li>
+  <li data-page-node-id="RBJ9jeVqsfp1TnnXSa4g95"><a href="#risk" data-page-node-id="L8xeJkrMeEr6J8pPauEs2f">六、风险登记册</a></li>
+  <li data-page-node-id="SEoW4e6vFLWAXWydHBCnKr"><a href="#appendix" data-page-node-id="QB6uIGU4lafamV6W1rbBnR">附录：实测证据原文</a></li>
+</ul>
+</nav>
+
+<h2 id="v0" data-page-node-id="npWKIYy33FZhf39akXpCWe">〇、结论先行：三个改变计划的发现</h2>
+
+<p data-page-node-id="jIvTCFSNi2aDXEdprJwbDn">上一份可行性报告的结论是「可以做，Rust 侧比想象中干净」。这次为了定里程碑，我把仓库 clone 下来读到了传输层，结论要往前推两步——<strong data-page-node-id="qUKDTNGcOOyp5u2DG1qmDi">两份报告之间，MVP 的成本量级变了</strong>。</p>
+
+<div class="callout" data-page-node-id="y4XPMJLCZJ0cq9JNQoxX0E">
+  <span class="t" data-page-node-id="dFMmxNSJQFnfDZia8f56Sd">发现 1：rsHell 不是「本地终端 + 可选 SSH」，它本来就是一个 SSH 客户端。</span>
+  <code data-page-node-id="s6qCAndgZ1yvswxZPXOjVE">crates/rshell-session/src/transport/</code> 下有四个传输实现，其中 <code data-page-node-id="cGIBGvQu49FDTARQ1EwGOv">native_ssh.rs</code> 是<strong data-page-node-id="gHC68rRAAwmPojydDyY5CR">纯 russh + <code data-page-node-id="yopPYE0ZY0h3melJwSbcp4">tokio::net::TcpStream</code></strong> 的托管 SSH：
+  <code data-page-node-id="elHEU9XoZ7PcGmTiQ8cNlb">client::connect_stream()</code> → <code data-page-node-id="4WNL7BPA6A2pQWOvyVH2pM">AuthPlan::Password</code> 认证 → <code data-page-node-id="zcpAAJHyW6HqS5JbJtmrV9">channel_open_session()</code> → <code data-page-node-id="ECkffi41UcZLPD51ASWXI2">request_pty(term, cols, rows, px_w, px_h)</code> → <code data-page-node-id="lWU5mwASmLLzqurCa2Yhzc">request_shell()</code>。
+  <strong data-page-node-id="WpG5G32bNCj4k9XFGxGYq4">PTY 开在远端，本地一个 <code data-page-node-id="yn4wM7OkcANYGvN880ULo2">fork</code> 都不需要。</strong>你要的「写死地址和密码验证 SSH」，不是要从零搭的东西，而是仓库里已经写好的东西——只是从来没人把它编译到 iOS 上跑过。
+</div>
+
+<div class="callout" data-page-node-id="P8MjNMoihF932Q5q9ulbqw">
+  <span class="t" data-page-node-id="Kl5m3wk8yRN8O8coe2qE6h">发现 2：Flutter 与 Rust 之间的边界，仓库里已经存在，而且已经是可序列化的。</span>
+  <code data-page-node-id="rtLWjbaQGJDChJLfS9VV5G">rshell-core</code> 有一个完整的 <code data-page-node-id="S3g9VLlMfVQL3UGtNbFQIS">protocol</code> 模块：<code data-page-node-id="vCpM9E1AaFCWOCIbEFLKQD">UiCommand</code> / <code data-page-node-id="6fzJU4Mkv0GhtM5EMEJPAj">AppEvent</code>（应用级：连接目录、设置、导入、分屏、标签）与 <code data-page-node-id="tFPd88XdEtpQufDLj2NB3J">SessionUiCommand</code> / <code data-page-node-id="LUUy3MpsypzwOalrWs6p7m">SessionUiEvent</code>（会话级：输入、缩放、滚动、搜索、选择、交互应答）。
+  更关键的是，<strong data-page-node-id="NkB3uFHxGXL3UnFCqZximQ"><code data-page-node-id="MEQqriDWLGNXVQVsWN5sZ9">RenderFrame</code> / <code data-page-node-id="URrzNTgVriFg1EJ1Lpy11t">RenderCell</code> / <code data-page-node-id="VvqB8DwH3N6UgvYcn4DReC">TerminalInput</code> / <code data-page-node-id="YCCo6qga1qdGlStFN0UBO2">InteractionRequest</code> 等全部类型都已经 <code data-page-node-id="K91c6ga0WAzwgBTjDzsYGN">#[derive(Serialize, Deserialize)]</code></strong>。
+  GTK 层（<code data-page-node-id="wF6VNwY6tHBcorEhXeVwpz">rshell-ui</code>，22812 行）就是靠这套类型跟内核说话的。<strong data-page-node-id="KgMGRGf7aByifzhwHHneAf">换掉 GTK，边界不用重新设计。</strong>
+</div>
+
+<div class="callout" data-page-node-id="rVOKiOAhWSuQtb9G4Si1Y0">
+  <span class="t" data-page-node-id="As25wKgfv6TWYcTjWGKh0K">发现 3：M0 已经端到端跑通了，不是推测。</span>
+  我在本机起了一个最小 russh 服务端，用 rsHell 自己的 <code data-page-node-id="ugBPt9CqCQ4LbG0Cd42Hs0">NativeSshTransport</code> 走了完整路径，拿到了：
+  <code data-page-node-id="BTSfcIZkeMFldA6ImLc4AO">request_pty</code> 的实际参数（<code data-page-node-id="V3JEZB6BAAUWSMI6Qek8vn">xterm-256color</code> / 80×24）、远端 shell 的开场字节、写路径回显、主机密钥 TOFU 落盘。
+  同时 iOS 三个目标（host / device / sim）全部构建通过，<strong data-page-node-id="EabOoerQz99DwBtaXoB9o0">链接产物里没有任何 <code data-page-node-id="NGpGnOEHheqSjQ9sqBNE7A">fork</code> / <code data-page-node-id="YG0b0ITo3QFC0O7Gacv9Wp">openpty</code> / <code data-page-node-id="FUCZjA7SMvMvK7Wt48szpD">posix_spawn</code></strong>。见下一节。
+</div>
+
+<p data-page-node-id="HNqiUqgYQCxa6ogvkDPYAR">这三条合起来的效果是：<strong data-page-node-id="r2CphWTQ9F7THM6nkXYYo5">MVP 的第一步从「搭一套 FFI 框架 + 重写终端」降级成「把一个已有 crate 编到 iOS 上，喂它一个写死的 <code data-page-node-id="Iv97FRl8ppxUXpMjP8uM1n">ConnectionProfile</code>」。</strong>真正的工作量仍然在后面（渲染与输入），但它现在可以一块一块地验证，而不是压在一次大集成上。</p>
+
+<h2 id="ev" data-page-node-id="QcUFOpGB3NPEElgFDR5mav">一、M0 已经端到端跑通（本次新增实测）</h2>
+
+<h3 data-page-node-id="ihNxGZEtgpbbnkzoyYkG7Y">1.1 环回端到端：不依赖任何外部服务器</h3>
+
+<p data-page-node-id="JNTXZ9CXPv5nH45vG1PjGh">在 <code data-page-node-id="ENJ96KBlfHKyhyPGLuFHCH">rshell-ios-m0/examples/m0_loopback.rs</code> 里，同一个进程内起了一个只认 <code data-page-node-id="eTdoVbh2V6b54v35QvLf1b">probe/probe</code> 的最小 russh 服务端，然后调用与真机完全相同的 <code data-page-node-id="mJyd7QxuzAtmVvF6D5wi7U">rshell_m0::blocking_smoke()</code>。实测输出：</p>
+
+<div class="evidence" data-page-node-id="uOdcZo8gIXmx1ejDfeiUae">
+  <div class="hd" data-page-node-id="NCwayD394PFBFRrUZGrpmy">cargo run --example m0_loopback</div>
+<pre data-page-node-id="awgMoYSxnM9jWsIjBHEh2N">loopback server on 127.0.0.1:57388
+
+===== M0 结果 =====
+outcome=read-deadline(10s) reads=3 bytes=89
+--- transcript ---
+PTY-ACK term=xterm-256color cols=80 rows=24 px=0x0
+M0-LOOPBACK-SHELL-OK
+$ echo M0-ECHO
+
+PTY/shell 请求序列 + 写路径 : YES
+主机密钥 TOFU 已落盘        : YES (.../rshell-m0-loopback-known_hosts)</pre>
+</div>
+
+<p data-page-node-id="K0SX7ETOEWStxenCXydHvr">逐条对应到它证明了什么：</p>
+<table data-page-node-id="ywFYrZGzNkbCMPTzsr9a6Q">
+  <tr data-page-node-id="GsvskCz3KxxWcZBpBN0oOp"><th style="width:34%" data-page-node-id="MKr7WtTzAbWR8y9uRcytox">transcript 里的证据</th><th data-page-node-id="1IVaNXoS69fkzjqMSfqCfP">被证明的事实</th></tr>
+  <tr data-page-node-id="cGaSiUV0wJys8Ar7h9qGqN"><td data-page-node-id="iKdNj1qADUYpG0lhnSIXqW"><code data-page-node-id="5b0lmPDIl0ONcp1M3soQkZ">PTY-ACK term=xterm-256color cols=80 rows=24</code></td><td data-page-node-id="kZMy0g0Gtm7CYRG4aYCqeA"><code data-page-node-id="xDaMqIF3IfUa4eWiD956jT">TransportRequest::new(TerminalSize)</code> 的参数被<strong data-page-node-id="s3BMHF9UyujmVtZm1VlWHw">原样</strong>送到远端 <code data-page-node-id="YAuEvXDiQcf0TqFT4s7YDC">pty-req</code>。终端类型、行列数都对了。</td></tr>
+  <tr data-page-node-id="seTV6j4EES7SfKmF7GvoCN"><td data-page-node-id="hDaUde6jAxyWaQIV6UaiOg"><code data-page-node-id="WCUvXPErgkDI2liwNRfJtG">M0-LOOPBACK-SHELL-OK</code></td><td data-page-node-id="N7bsEcteH3BlSQlR1xOfMX"><code data-page-node-id="0Wi246NervSry4CLV4hToy">request_shell()</code> 成功，远端 shell 的内容能作为 <code data-page-node-id="7Lr5WzuRQsi3zwhHsGDVGR">TransportEvent::Output</code> 流回来。</td></tr>
+  <tr data-page-node-id="iETl3MSpNiZrAhGO5rDiVZ"><td data-page-node-id="FZ9A3qXJwurBBg2dAjKv1A"><code data-page-node-id="DSAGS78YJ7XKAxovQDMvit">$ echo M0-ECHO</code></td><td data-page-node-id="MCtMCzJexIJAy25GwYT7pO"><strong data-page-node-id="mA3hd8M4EahIal2yJp0IJF">写路径通了</strong>：<code data-page-node-id="wlEEHRB9ZVN4r6iqfrWuiU">transport.write()</code> 的字节真的到了远端并被回显。这就是 M2 输入闭环的最小切片。</td></tr>
+  <tr data-page-node-id="9mD3aGWSPkr2AuqR7KrWE0"><td data-page-node-id="UOAyNg8UlrkiTP5RVKBNXD"><code data-page-node-id="PJ6FqVSvnEGlsF02PWoH2F">主机密钥 TOFU 已落盘 : YES</code></td><td data-page-node-id="uIIl4FmD70FHsqHPEFGJeo"><code data-page-node-id="FUVEdNt7JBmEyQjKN3NDuI">InteractionBroker</code> 的自动应答 → <code data-page-node-id="EYdoNJLn0qLmGKGW4vgRsA">KnownHostsVerifier</code> 接受 → 写入 known_hosts 文件，整条交互链路是活的。</td></tr>
+  <tr data-page-node-id="FhU3ukqvLjHWf67oMzEEWg"><td data-page-node-id="Nr7B2OAO3wS9KF3QRixIKS"><code data-page-node-id="DIuWwhRAW9HOz9EpVpQWio">outcome=read-deadline(10s) reads=3</code></td><td data-page-node-id="eJudSVd1zbo8fGefH7v7Gy"><span class="warn" data-page-node-id="RzhUBFiLwt7RYFXgvLsLLp">负面发现，但很重要</span>：循环不是被 <code data-page-node-id="TC4nBB52FLr92cNdqPMn9C">Eof</code> 退出的。见下面 1.3。</td></tr>
+</table>
+
+<h3 data-page-node-id="FHXNRAEhxDX3mN0KuFEFno">1.2 iOS 编译与链接</h3>
+
+<div class="evidence" data-page-node-id="IriPuZq3xLAEgkK8qTRyqK">
+  <div class="hd" data-page-node-id="UTzSxfA2IMVAJzP18mpSbN">cargo build --lib --target aarch64-apple-ios（device）</div>
+<pre data-page-node-id="pEOyvF0PncxkeBKJQXDEJn">Compiling rshell-session v0.1.0
+Compiling rshell-m0 v0.1.0
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.63s</pre>
+</div>
+
+<div class="evidence" data-page-node-id="d32rfGq3N2pPrnBHc7XCDr">
+  <div class="hd" data-page-node-id="7rmee0IQmBeuNOMdb0EGwh">nm -u 检查为 iOS 完整链接出的 dylib</div>
+<pre data-page-node-id="Z1tFVDhhOVwP1j3UrCbW3i">_CCRandomGenerateBytes  _close   _connect  _fcntl   _getaddrinfo
+_kqueue   _malloc   _pthread_create   _pthread_cond_wait
+_pthread_mutex_lock   _read   _socket   _write   _writev
+...
+未解析符号中 openpty / forkpty / login_tty / fork / posix_spawn / execve 的命中数：0</pre>
+</div>
+
+<p data-page-node-id="AQDrjBBQgklTfgiwH6E0eF">也就是说，<strong data-page-node-id="c4oZpSTuLBt8CnzV9Uc60z">链接器把 <code data-page-node-id="3Mb2zmkzqA04ss7bBO4gu4">transport/local*</code>、<code data-page-node-id="EsKyjMC8To6zbLS5fSGCKt">transport/pty</code>、<code data-page-node-id="owi6tDYaywgj95x7bL4eHI">transport/system_ssh</code> 整块裁掉了</strong>——它们的代码在 <code data-page-node-id="zqFU50DgeMeAZvcaAA02h5">rshell-session</code> 里（静态库中确实残留 7 处 PTY 符号引用），但 SSH 路径不引用它们，最终产物里一个都不剩。留下的只有 libSystem 的 POSIX socket / 线程 / 虚拟内存，加上 CommonCrypto 的随机数（<code data-page-node-id="ylZfhZGfb7eob0A7xEbXHc">ring</code> 的 macOS/iOS 后端）。</p>
+
+<h4 data-page-node-id="4vWoqXEYPWA3ExXRzWuhQi">体积</h4>
+<table data-page-node-id="KWduGsHP7oH7kPgcBim1Ug">
+  <tr data-page-node-id="eybYpBPDigtWA72ayFKjms"><th data-page-node-id="WnKaEJZWNEm4FKwnZHfx21">产物</th><th data-page-node-id="oh4IOt6GBqhjMrdvtMG2Fs">大小</th><th data-page-node-id="dTjTAARAjjZGrWsoCFCBH4">说明</th></tr>
+  <tr data-page-node-id="ig9OEkYAS0V95lEsbzbAby"><td data-page-node-id="BgPwhjNUQ9FZa7Be8tx8tR"><code data-page-node-id="QSEFA7eXCdivQr3qXYMsfR">librshell_m0.a</code>（release，iOS device）</td><td data-page-node-id="CR0nRvYY3T3waRF8PgrWCc">43.8 MB</td><td data-page-node-id="0NEP9Jh2NJxqLkeig5pssj">含全部依赖，未 strip；Xcode 会自己做链接期裁剪</td></tr>
+  <tr data-page-node-id="A7NEfEJuTxisp3Uk6ZuWWY"><td data-page-node-id="OvqLwnKHKtUCNoDGJ0UvKq"><code data-page-node-id="rqQYWdK0xaHmmwJtPF7NnJ">librshell_m0.dylib</code>（release，已 strip）</td><td data-page-node-id="aVFYILU3kGgEJ4XoAU3Aw2"><strong data-page-node-id="3WflCCmhrm9m4Wtm9wmeee">3.72 MB</strong></td><td data-page-node-id="2lvkNlS2zp8pIRpDurwBzT"><strong data-page-node-id="o1THb97FHK9fZJe0yCthoO">这才是 Rust 内核真正给 App 增加的量级</strong></td></tr>
+  <tr data-page-node-id="zMQggYSDBBgE5A2vomaSAz"><td data-page-node-id="HAotDxF9xLwBsFb2TL0Lst"><code data-page-node-id="uGHPzGGteEeZ4o6LgIPoBL">librshell_m0.dylib</code>（debug，已 strip）</td><td data-page-node-id="PJrBdzi9yTDwm1NLmd0yzl">9.06 MB</td><td data-page-node-id="snalIoxZPuIrwmql26fQyF">对照用</td></tr>
+</table>
+<p data-page-node-id="RYk94jF6xp2x7NjajXlASu">3.7 MB 里包含 russh + ring + alacritty 解析器 + vte + serde + tokio。对 iOS App 来说完全可以接受，不需要为体积做任何妥协。</p>
+
+<h3 data-page-node-id="ov100kvxJhbPlT94up7KjY">1.3 一个必须写进设计的负面发现</h3>
+
+<div class="callout warnbox" data-page-node-id="KhxEKb04lMHAYwppht8gVq">
+  <span class="t" data-page-node-id="TgqTrjnQBfPLrW1O7WjQ1d">M0 的读循环必须有截止时间，不能等 EOF。</span>
+  我第一次跑环回测试时它<strong data-page-node-id="xQBbWwjpRRoDOitHEE6yQY">永久挂住了</strong>。原因不是 bug：真实远端 shell 既不会 <code data-page-node-id="qtEf8l4lCEU9gGuuBiGGM5">Eof</code>，也不会给 <code data-page-node-id="EDHDwVhjhwcilEwRYLVY9y">ExitStatus</code>——它会一直等你的下一条输入。只有 <code data-page-node-id="YOBcyOaP5ogbcTkttJ8wQm">exec</code> 模式（<code data-page-node-id="0RLqGyJy1DhCEcE0IMAlDW">ConnectionProfile::remote_command</code> 非空）才会有退出码。<br data-page-node-id="L4t0eTwDt8IBiCPQRj9jSY"/>
+  「连上 → 读 → 等 Eof → 打印结果」这个最自然的写法，在真机上就是一个永远转不完的循环。M0 的读循环必须带总时长上限（我们用 10 s），M2 之后则由 Flutter 侧的会话生命周期来控制。
+</div>
+
+<h3 data-page-node-id="ktDHKjYPseoSt1xCEn53vj">1.4 顺带确认的两件 M1 前置条件</h3>
+<ul data-page-node-id="UULcQ5YC7vvUY8TNH0id48">
+  <li data-page-node-id="QIWsQBZsYCr2REDblhbPPv"><strong data-page-node-id="B1lThL4LklePRMWR1VSHFj"><code data-page-node-id="pAcYsewz3f9fDM5Z1POa0S">serde</code> 必须开 <code data-page-node-id="6V4Jg6IAYM348AAw6nl6cY">rc</code> feature。</strong><code data-page-node-id="AT8gff5E3dMTPRYcxnj1R0">RenderFrame.rows</code> 与 <code data-page-node-id="3vAHEiMnvfZIzt7pQlSwEN">RenderRow.cells</code> 的类型是 <code data-page-node-id="KE9KqpWr26SpOKjjJdWuRH">Arc&lt;[..]&gt;</code>。serde 默认不实现 <code data-page-node-id="bgXVG5fwQwaNwbpzoFZBqU">Arc</code> 的序列化，不开 <code data-page-node-id="E0CX0HHcCNTJ4CRWsjlxCA">rc</code> 就会在 <code data-page-node-id="bRBZrkiIvnERV6TpLsth16">serde_json::to_string(&amp;frame)</code> / bincode 编码处报 trait 不满足。已在新 crate 里打开。</li>
+  <li data-page-node-id="ulkaS7VNH3aoDOGQm6PAgX"><strong data-page-node-id="qiYlJ6PbNsINR8fGgZC3AD"><code data-page-node-id="jlj97lSo1LDW8PN4am4Arq">RenderFrame</code> 可以跨线程搬运。</strong><code data-page-node-id="5M8HCMjDVkFZtsel6ZL7cb">frame_is_send()</code> 把帧从引擎线程移到另一个线程再读回，编译通过。rinf 在独立线程发信号，这条必须先立住。</li>
+</ul>
+
+<h2 id="mile" data-page-node-id="GjDOGJcHayYk3iZ1jgAycW">二、关键里程碑 M0–M4</h2>
+
+<p data-page-node-id="QNn3BSFBUWddRGv2BJEClI">每个里程碑只增加<strong data-page-node-id="dYLHZtXZwwwno1I9hzSszJ">一类</strong>未知量，前一个的绿是后一个的前提。这是刻意的：M0 挂了你只怀疑 SSH，M1 挂了你只怀疑渲染，不会被混在一起。</p>
+
+<div class="mile done" data-page-node-id="MECadz9ZNNDPZN8h6DCP0Z">
+  <div class="head" data-page-node-id="b6UhL7e5U309ShY1Dq48rE"><span class="tag" data-page-node-id="VBYftk30gaATY3SCkGXOnB">M0</span><span data-page-node-id="mxljBNgDFsLcEPmI0SABrb">SSH 直连 —— 写死地址和密码，先在真机上跑通</span><span class="chip" data-page-node-id="1Juz30WpaAwGsRDiZjGC1E">代码已就绪</span></div>
+  <div class="body" data-page-node-id="PILkfC6hZw8FAACbNsGclD">
+    <p data-page-node-id="xOrLgwqnYLyFZdWocpGrmM"><strong data-page-node-id="rESntmf6DzJ8fpDqGszMn5">做什么。</strong>把 <code data-page-node-id="AirB49iTVRPaRFXFM9mDfH">rshell-session</code> 编成 iOS 静态库，Rust 侧写死一个 <code data-page-node-id="ZaxzzRvc6JXx45t3XumDy8">ConnectionProfile{ NativeSsh, Password }</code>，用 <code data-page-node-id="cmdaksKX9sOgwbtaEAGpy6">AuthPlan::from_secret()</code> 直接吃明文密码（不读 vault），连上一台真实服务器，把字节打出来。没有渲染、没有输入、没有 UI。</p>
+    <p data-page-node-id="YBFFJBJABm1tzGwtgkZniW"><strong data-page-node-id="fiYMs2sl8DkReH8u03tMlQ">拆成两步，把风险再切一刀：</strong></p>
+    <ul data-page-node-id="GR6klfAg0oPgIcqQ7fbGpX">
+      <li data-page-node-id="nxUGZSjWwlt1apxY3OsOBo"><code data-page-node-id="oznyjIAkgMdkGOL6cvbQ65">M0a</code>（macOS，不需要 Xcode）—— 本报告已跑通。验证 SSH 逻辑、认证、TOFU、请求序列。</li>
+      <li data-page-node-id="Ae9ebWzHeVYCHBCNmbEXTJ"><code data-page-node-id="aiz78Ic73FXraJkMJvW8ph">M0b</code>（真机）—— 同一个 Rust 函数，唯一剩下的未知量就是 iOS 沙箱。</li>
+    </ul>
+    <p data-page-node-id="FHvMAI7VOGcdsvLexwV2tp"><strong data-page-node-id="YvbDAGiDTZuDL5kJ9muGE1">宿主用什么。</strong>建议一个只有「一个输入框 + 一个按钮 + 一块文本」的 Flutter 页面，用 <code data-page-node-id="y30KgFUNTHYml5RjHFKwgr">dart:ffi</code> 直接调 C ABI <code data-page-node-id="2RsUsltDSgUOLqFj7E2ys2">rshell_m0_smoke()</code>。<strong data-page-node-id="gRZNrCi28OYDRucl6HyCQU">这一步先不接 rinf</strong>：M0 要回答的是「SSH 在 iOS 沙箱里通不通」，把 rinf 的构建集成混进来会污染信号。Rust 产物在两种宿主下是同一个 <code data-page-node-id="NUgQU6VeXLTxUCDSQ07J15">.a</code>，不返工；rinf 留到 M1 与结构化信号一起接。</p>
+    <div class="gate" data-page-node-id="Xn7VtERqOu8ZBjQ5NrXVkG"><b data-page-node-id="lWB5aw7kUzB30RUXS3voMI">验收（全部满足才算绿）：</b>
+      <ul data-page-node-id="FgFLfZ2hNDqDG9XHlXASMd">
+        <li data-page-node-id="9hB5sWEJM731h57QNIFG8s">真机上 <code data-page-node-id="ifnFmrc1gsDFeR30cmSPEb">rshell_m0_smoke()</code> 返回 <code data-page-node-id="l8CqMn0EpJdi3urOBN3R7s">ok=true</code>，transcript 里能看到远端 shell 的提示符或欢迎信息。</li>
+        <li data-page-node-id="64apq5byCe9gYLCYCd9tEn">失败时返回<strong data-page-node-id="y3aojR00TgTiNLA0iCdB79">明确分类</strong>的 <code data-page-node-id="hdhUVKu3ETBY70wPLmWjom">SessionFailure</code>（<code data-page-node-id="yYwpvBXdGV6sY0fr2wNDzA">Network</code> / <code data-page-node-id="ghpwHi1fWt8v3HrRrDu2CY">Authentication</code> / <code data-page-node-id="IX9DEf15m7ldirC6KWdA8F">HostKey</code> / <code data-page-node-id="8ni246lwEKT0oHAVWcSrD9">SshChannel</code>），而不是一句笼统的错。</li>
+        <li data-page-node-id="aC3nAeCLxJGvM7gk6HTwvY">写路径回显成功（<code data-page-node-id="jbqakK53gdaC7wXYVutEUG">transport.write()</code> 的字节被远端收到）。</li>
+        <li data-page-node-id="VNJfwKCgUAk3FeuYERPBg8"><code data-page-node-id="i0yh11wBoWAKtnv2BKCFDt">known_hosts</code> 在 App 沙箱内落盘，第二次连接不再触发主机密钥交互。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="mile" data-page-node-id="OBfyp1vBesV6fEBTn1kJEt">
+  <div class="head" data-page-node-id="KsJ1PBM8FRMR4lDxLq8dix"><span class="tag" data-page-node-id="YyvbycQey16kTXQpdLcgfL">M1</span><span data-page-node-id="Yl4w4UB6TXaM356cl8Ia8u">一帧终端画面 —— 接入 rinf，画出只读网格</span></div>
+  <div class="body" data-page-node-id="2Bn3QAcOTyyns8tyug7LbT">
+    <p data-page-node-id="2YowvNhtvvcv9dfR0FvtsS"><strong data-page-node-id="LZPCZR9wR8GMCA7HLloV3Y">做什么。</strong>把 M0 拿到的字节喂进 <code data-page-node-id="8HMMSxksq8ZxRUKMbhp0GA">DefaultTerminalEngine::advance()</code>，调 <code data-page-node-id="15g9IVIc5DEmBWAYpD8ezl">render(viewport, selection)</code> 拿到 <code data-page-node-id="4BGOjuLAsgAciCQNSCf3rb">RenderFrame</code>，经 rinf 信号过边界，Flutter 侧用 <code data-page-node-id="rp68BrqLjr84EWDDu58Jsv">CustomPainter</code> 画出来。<strong data-page-node-id="k7qXxEg1lIGnlEfC74xYZM">仍然只读</strong>，不处理输入。</p>
+    <p data-page-node-id="tuPPB0l9hGdGpJl82wooqd"><strong data-page-node-id="zLOXqfeEk8QBKHYYuR5Q9h">为什么先只读。</strong>渲染是这条路上唯一有真实性能风险的地方，而输入是唯一有真实平台风险的地方。分开测，出问题立刻知道该看哪边。</p>
+    <p data-page-node-id="vHraO5H2b06Rya92Xv4lXB"><strong data-page-node-id="B5H1FbxyoGJ9Rfcbbw7q9z">度量权威的划分（重要）。</strong><code data-page-node-id="Cb2rwdud2r3seVzhdZfCML">TerminalSize</code> 里的 <code data-page-node-id="XVNBhv2fVh9WyvolVfD7DH">cols/rows/pixel_width/pixel_height/dpi</code> 必须由 <strong data-page-node-id="ExcnAa0Dx5u6vXzt4CgL7w">Flutter 测量后回传</strong>：字体度量只有一个权威，就是实际画字的那一方（Flutter）。Rust 侧的 alacritty 只负责网格状态，不负责判断单元格有几百像素宽。仓里 <code data-page-node-id="o5ziPXwO5f7MPOXkX98uas">alacritty_adapter.rs</code> 已经是「尺寸由外部传入」的设计，不需要改。</p>
+    <div class="gate" data-page-node-id="lolY4wOx6P3tCiaBsUgQd2"><b data-page-node-id="cdaWxWHHcEJkzSdciWASQl">验收：</b>
+      <ul data-page-node-id="9UbE9DaI3DVNADl84oE0fX">
+        <li data-page-node-id="838oybvzac16rl0qONwk3C">iPhone / iPad 上出现完整着色的终端画面，<code data-page-node-id="lW48bBvkEBi9JcDTrBSHzE">ls --color=always</code> 与 <code data-page-node-id="c30eVxjUFmLLrW08ieeTTM">git log --color</code> 颜色正确。</li>
+        <li data-page-node-id="5DHlmGcaBb8PKRh0PYDNqk">CJK 按 2 列宽渲染、emoji 与零宽字符不错位（<code data-page-node-id="ujJeD8HisTonaX0EPVFxrX">render.rs</code> 里已有 <code data-page-node-id="IXp4zbB22KD1KSb3f4Hvg5">WIDE_CHAR</code> / <code data-page-node-id="hjHGNYu22Z3iKuL1iADv3Y">ZEROWIDTH</code> 处理，验证它被正确消费）。</li>
+        <li data-page-node-id="Uy4XoDiqu792F6BruqgbhB">旋转或改窗口尺寸 → <code data-page-node-id="MMa976oHPCGhfGHPHgwrUt">SessionUiCommand::Resize</code> → 远端 <code data-page-node-id="KTzA61ceDz1zNC7nZwsMTm">WindowChange</code> → 远端 <code data-page-node-id="VJfSE0JJNBN5Nld2uSHyV8">stty size</code> 的输出随之变化。</li>
+        <li data-page-node-id="KdyP4dL5z75R6w3L25Fl1y">连续刷新（<code data-page-node-id="GqgKKQvglVboz0AgXTkUUc">top</code> / <code data-page-node-id="CoXthOgvejW3uMmEZCbTlg">htop</code>）下掉帧可接受，且 rinf 的「只保留最新信号」语义让丢帧表现为<strong data-page-node-id="ogvAA8VBWr3vD3p9PbQxRo">晚一帧</strong>而不是花屏。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="mile" data-page-node-id="Y8UhXEEiq7sUfQmDHta8oG">
+  <div class="head" data-page-node-id="3Lvv07p5iXCZhcRlCYhuaY"><span class="tag" data-page-node-id="MGYI3iVHYcGdcY032BbM9n">M2</span><span data-page-node-id="pzUDuAgHvHLhCy9i1GrRJY">输入闭环 —— 软键盘、IME、Ctrl/Esc</span></div>
+  <div class="body" data-page-node-id="KDwtJPaDi4iQHqF8YedRSs">
+    <p data-page-node-id="V7GNzSaqOKPSjjf2WCr1ZT"><strong data-page-node-id="wUSqoinDCf6G5tjktHEIDf">做什么。</strong>Flutter 的 <code data-page-node-id="zBSsZSj0zZryzIifqDV2no">TextInputClient</code> / 硬件键盘事件 → <code data-page-node-id="9TsAMMxTsDAcNM5l7OyjRH">TerminalInput::{CommittedText, Key{code, modifiers}}</code> → Rust 的 <code data-page-node-id="44d1uZ9HlcDx4tzVhFSCBl">encode_input()</code>（alacritty 的键编码，含 Kitty / CSI-u 协商）→ <code data-page-node-id="vBAYf5nCYbAEbfQwlXexNq">transport.write()</code>。</p>
+    <p data-page-node-id="oky2YBVi4T6EEQRatHlWjS"><strong data-page-node-id="YpBqqX4BTLrD7438aOietZ">边界上的一个硬约束：secret 类型不能序列化。</strong><code data-page-node-id="yurxPTl5dVG1Oyanv74gk4">SessionUiCommand::Paste(SecretString)</code> 与 <code data-page-node-id="kOALmUVnjHcdHoWAeyQVT8">InteractionResponse::Secret(SecretString)</code> 刻意<strong data-page-node-id="jF7FIy1VhJwGEa3nnC3BfR">没有</strong> serde 派生。所以 Dart 侧只能传明文，Rust 侧在接收处自己包成 <code data-page-node-id="90xw6UyXBZRpJ5itao7J45">SecretString</code>。这是设计意图，不是缺陷——但意味着协议层要手写一层「明文 → 秘密」的转换，不能直接 <code data-page-node-id="h2PD8rCz78wTrAewO3Qoal">derive</code> 完事。</p>
+    <div class="gate" data-page-node-id="9CcB84hHgoB8bJAKXLgzp5"><b data-page-node-id="OhVYtjVHMabLEIy2tMKU8a">验收：</b>
+      <ul data-page-node-id="tp8LIG4AAbAgZm1qAYJCAj">
+        <li data-page-node-id="xFkULKYtIlrXublEdaPixM">iPhone 上能跑 <code data-page-node-id="GuADayisR3GVKpeylfHGjY">vim</code>：进入、编辑、<code data-page-node-id="8BxHP8ttfuK1GAeCo0Qm1U">:wq</code> 保存，全过程正常。</li>
+        <li data-page-node-id="9HTyQMjQ7N05IkVbg0MzPY"><code data-page-node-id="Hxzl0SnVDzKsY44JhfIR7E">Ctrl+C</code> 精确发出一个 <code data-page-node-id="1gFzoP9IZoFhLDDgy8X8bA">ETX</code>（<code data-page-node-id="4xG7kVkXnMJFmOwVXLnP25">0x03</code>），不管远端有没有协商 Kitty 键盘。</li>
+        <li data-page-node-id="oTvURVsEbAPgEqe2HhOLzW">中文 IME 的 <strong data-page-node-id="bJmJVmxzKOCs4fckcYbQEI">preedit 绝不外发</strong>；只有 committed text 过边界。</li>
+        <li data-page-node-id="VnUQPFjUuV3KeC0IKd1uWh"><code data-page-node-id="tLlb1rj7gGS1mwGxN4Da3K">Ctrl</code>/<code data-page-node-id="dF2NxexRJsI2o123rGXwfo">Esc</code>/<code data-page-node-id="oTWupA260w5FJabOCFSuof">Tab</code>/方向键在软键盘上可达（快捷键行或 <code data-page-node-id="oOA1HIwEZZ1b1f4opZeGNL">inputAccessoryView</code>）。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="mile" data-page-node-id="2CyBrUo0AO4vmxyEXQ1wMr">
+  <div class="head" data-page-node-id="T4Cpu3ZSELGDzQi3hRquFH"><span class="tag" data-page-node-id="bV69ONuadEWkG82TuAf2Pi">M3</span><span data-page-node-id="NwybCPDpK2cCd94b9KWI8Q">连接管理与凭证 —— 把写死的东西换成真的</span></div>
+  <div class="body" data-page-node-id="6KEMRtMXMF5aMhwh3s31qk">
+    <p data-page-node-id="geMYajQfiFIGpfVuYE3fCO"><strong data-page-node-id="owUgaIIFN6mTGSY45AI02B">做什么。</strong>用 Flutter 原生表单做连接编辑，密码/私钥口令存进 iOS Keychain。Rust 侧的接口已经现成：<code data-page-node-id="UI7bGJ1AzJv1FsCbfGiaJb">AuthPlan::from_profile(&amp;profile, &amp;vault)</code> + <code data-page-node-id="PUlFsyxzhd7NRDztRH4es0">rshell-storage</code> 的 <code data-page-node-id="6U4NNdKkwf7q470dvrgEYV">CredentialVault</code>，只要在 iOS 上走通 <code data-page-node-id="qiYNeN3dCGjFE4iEPyuxxE">apple-native-keyring-store</code> 的 <code data-page-node-id="XldCUohrzEWTGq0qjUrGq6">protected</code> 后端（这正是 M0 唯一那个必修补丁打开的 feature）。</p>
+    <p data-page-node-id="ePdhvaAHzBSo6IV3PJDPwX"><strong data-page-node-id="7vh0TMdT4d9Af5mQLUgODi">顺带能白拿的：</strong><code data-page-node-id="KzvXWfDujd5yATo4oHbXdU">UiCommand::ApplyCatalog</code> / <code data-page-node-id="ZiEC5OTtqJnGwQnESMgx5h">AppEvent::CatalogChanged</code> 与 <code data-page-node-id="UxACLhHuaEIztpRR5nb7gd">ImportSourceKind</code> 系列意味着<strong data-page-node-id="hNqMRsm7ILgBU89JB1BJVM">连接目录、分组、导入（含 SSH config / 其他客户端迁移）的逻辑都在 Rust 里</strong>。Flutter 只需要做表单和列表，不需要在 Dart 里重写一份业务模型。</p>
+    <div class="gate" data-page-node-id="CLSjgIAlC9WEbI4AbY0biA"><b data-page-node-id="YFIAJfHxOzD7SIFN6KOi8k">验收：</b>
+      <ul data-page-node-id="WcYPMmSA2qMqkSbD4gLzrT">
+        <li data-page-node-id="GvDtlwbMBTcd6sMYD2MaGP">新增 / 编辑 / 删除连接，密码进 Keychain，杀进程重启后仍在。</li>
+        <li data-page-node-id="IgWvTvpLGHos9QMyWt9cFJ">首次连接的主机密钥确认走真实 UI（<code data-page-node-id="N0dNkVJiJTs7q3IK27PErw">InteractionRequest::HostKey</code> → <code data-page-node-id="UQOWSdwmo29IIhnRmD2vSp">HostKeyPrompt{sha256, changed}</code>），不再是 TOFU 自动接受。</li>
+        <li data-page-node-id="wK5GXBFID7edHFUv71aoqu">主机密钥变更时给出 <code data-page-node-id="zUmsMt9BTkAl0lIbPAIKlI">changed=true</code> 的显式警告，不静默接受。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="mile" data-page-node-id="fyy2INMT1HnesXKnN93UzD">
+  <div class="head" data-page-node-id="AcNXK7BKRt0PaO9sPbBI3M"><span class="tag" data-page-node-id="AKzsVXpXlwGFXtet6s4ikM">M4</span><span data-page-node-id="1GXV3TTleAOODBuvnHD8aj">产品化与合规</span></div>
+  <div class="body" data-page-node-id="ZwRHI50bFqIqAmqGEMSlcP">
+    <ul data-page-node-id="d9FdxEUYHUchoWazB68lBm">
+      <li data-page-node-id="O1lOjcd8RkRkLJ8Ia7aeDF"><strong data-page-node-id="KYPLipbGq5e6sc71V1xnkj">多标签 / 分屏。</strong><code data-page-node-id="YD1LaOkH3U8QtopflAiA7D">PaneTree</code> / <code data-page-node-id="xjKLlMEZGANY4go53o0nvw">SplitAxis</code> / <code data-page-node-id="D6FLdO8cQj0SQNYNzjQ64C">WorkspaceState</code> 已在 <code data-page-node-id="7wI9gGJxkm0w3DIGi5sshM">rshell-core</code> 里，<code data-page-node-id="EVRRsgs7FqS9OGwhN0PlCl">UiCommand::{Split, ClosePane, CloseTab}</code> 也已在协议里。Flutter 侧做手势与布局。</li>
+      <li data-page-node-id="DhTCi4VCJfIsZ0wCEeFdoL"><strong data-page-node-id="CCuVn2K3K1kvoTDJLalYDD">滚动回看的分级上界。</strong>桌面那条 <code data-page-node-id="zHgxpEUlKRedO14sAOnRZ3">scrollback_lines</code> 契约（上限 <code data-page-node-id="yl570yeZEDIrDAnte2a6qW">1_000_000</code> 行）在手机上会触发 jetsam 直接杀进程。<strong data-page-node-id="YiQCQkv8zLoKrF8yB6WvoC">必须另设平台分级上界</strong>，不能沿用桌面默认值。</li>
+      <li data-page-node-id="ckup7cMXjA0WK7C26taB4J"><strong data-page-node-id="as56OiXa5IbWIQoF0illUr">生命周期。</strong>App 进后台后 SSH 连接怎么处理（保活 / 断连 / 重连），<code data-page-node-id="PPRnJSC8NRG2wyT8U4WZPj">SessionUiCommand::Reconnect</code> 与 <code data-page-node-id="W5TK2Xx09Hua30rDdce6rb">SessionState</code> 状态机已在 Rust 侧。</li>
+      <li data-page-node-id="3rIV0fDeLPnrRCIw7vvPiH"><strong data-page-node-id="1yHris4Vf3v1BOj2GyAi9g">分发合规。</strong>App Review 2.5.2 对「可执行任意代码 / 远程 shell」类应用有限制，定位与描述需要提前想清楚。</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="hand" data-page-node-id="hR7IP1yOjlEWvqkeSzWbxb">三、M0 交接单</h2>
+
+<p data-page-node-id="FQHbc890XE69YUFcadIhJg">可运行代码已经放在 <code data-page-node-id="xbzr23f90iR0b4duoZ3kmW">rshell-ios-m0/</code>。</p>
+
+<table data-page-node-id="7t8YnK2SbsvkpSXzsMgK9K">
+  <tr data-page-node-id="VTwcMgw9rZh0XpPJKMvpHU"><th style="width:36%" data-page-node-id="8Rqtn0beLUP82DUacs5gK5">文件</th><th data-page-node-id="Xuv9kLyceHGHUZLjeDkhOx">作用</th></tr>
+  <tr data-page-node-id="B6N93JxGhqovh2YC4dH7Yt"><td data-page-node-id="DYVFDdlAsJBs5opTBJMpjn"><code data-page-node-id="aoS5mOccaqDOsWv9VcrGHf">setup.sh</code></td><td data-page-node-id="P1j2sRQ9SeNE22Bops26AM">幂等准备：把 rsHell clone 到 <code data-page-node-id="uzkPZURf4AAyAk7rCLeaI8">../rsHell</code> 的固定 commit、打上 iOS keyring 补丁、装 iOS 编译目标</td></tr>
+  <tr data-page-node-id="J5tvnpvRfHAEiaIG5QAkSO"><td data-page-node-id="Q4NJHCXRrhjB6Lan1ZSvt0"><code data-page-node-id="5QbHi0R0s9irm34m1t4O4z">src/lib.rs</code></td><td data-page-node-id="IkFAylrbeF57nDzi561olH">M0 全部逻辑：<code data-page-node-id="pNSNMUzNi9KNO1KA00549k">smoke()</code> / <code data-page-node-id="kB15XbPqeREN5NgI74BDZ1">blocking_smoke()</code> / C ABI <code data-page-node-id="no9AY7PEqjxNaCX1RDNJ56">rshell_m0_smoke()</code>；另附 <code data-page-node-id="v9AW8LkWKxrHWKozYVGEyv">engine_smoke()</code>、<code data-page-node-id="88a0AoGKKe9yD8GFDjsVAK">frame_is_send()</code> 作为 M1 前置验证</td></tr>
+  <tr data-page-node-id="u9lvCgRVmMxmXQAEx1XGRe"><td data-page-node-id="Dhcrw6T6qxdcbwc8ZWjAzY"><code data-page-node-id="NhSoahoKDg2AF6UKNVMo6P">examples/m0_loopback.rs</code></td><td data-page-node-id="glEoEjIAAIkco1TNWjLx6l">同进程 russh 服务端，端到端跑通，不需要任何外部服务器或凭证</td></tr>
+  <tr data-page-node-id="JWo4WCkBq3zpw0sCg1OhCM"><td data-page-node-id="1GXPE5SF3Fs7sjf3KeCmEL"><code data-page-node-id="Mk6muwigg5qquzXH0BeIZy">examples/m0.rs</code></td><td data-page-node-id="OZOw6nKuGwNSVAJuF9JMCF">打真实服务器：<code data-page-node-id="w1V7AB8VTaUKzHet7uXLDC">cargo run --example m0 -- &lt;host&gt; &lt;port&gt; &lt;user&gt; &lt;password&gt;</code></td></tr>
+</table>
+
+<h3 data-page-node-id="Gqe6juCSQlCX5HsLiadstz">3.1 唯一必修的依赖补丁</h3>
+
+<p data-page-node-id="izhuQjPyas8GQ7Rr5k9TL1"><code data-page-node-id="lOBjE6TY0yzGNlDrokv3H0">rshell-storage</code> 的 <code data-page-node-id="YQArRWzJYrCFDCfDuGBOGC">Cargo.toml</code> 需要追加（<code data-page-node-id="6JvotpGpzuVu0pFsbBPYS6">setup.sh</code> 会自动做）：</p>
+
+<div class="evidence" data-page-node-id="uYFXBR3LHluKlExFCiL3gJ">
+  <div class="hd" data-page-node-id="LBCa8G3z22lOetr9NDr8Pm">crates/rshell-storage/Cargo.toml 追加</div>
+<pre data-page-node-id="A4CeGmlpfmluS6mxDf1Cie">[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1.0.1", features = ["protected"] }</pre>
+</div>
+
+<p data-page-node-id="0kUu5hgomSUgBOTL0hCuiR">原因是 <code data-page-node-id="bqLn8GFojS0IMmpzUGrF5K">keyring 4.1.5</code> 的 <code data-page-node-id="lTGnKIDmm1OsMnasqGX8hs">v1</code> feature 只启用 <code data-page-node-id="p2DhZ7cKK2Ckw6TZhxneMh">apple-native-keyring-store/keychain</code>，而 <strong data-page-node-id="DMB2fC5XEm2HczWjYySmUM">iOS 上根本没有 legacy keychain，只有 protected data store</strong>，不补这个 feature 会直接编译失败：<code data-page-node-id="Yrd7VIPFOW0UVP0GwT7cjX">error: The `protected` feature is required on iOS</code>。这是整个 Rust 后端在 iOS 上唯一一处硬阻塞。</p>
+
+<h3 data-page-node-id="MQGU3RdNdyeWzw7Q0sE9JY">3.2 M0b 的真机步骤</h3>
+
+<ol data-page-node-id="1uyp5EKnDZY3De1FSWv16A">
+  <li data-page-node-id="krCBrQ78Gr9sccmgwhGyEJ"><code data-page-node-id="XPu5HUZWeW2jYK2736lBCJ">./setup.sh</code> → <code data-page-node-id="LX6t7evcEVaHTBNOPStRRR">cargo build --release --lib --target aarch64-apple-ios</code></li>
+  <li data-page-node-id="vj3LOy91BP7AaRHG75dGc1">建一个 Flutter App 工程，把 <code data-page-node-id="nFHagEd4uCdpAfRuPNe1gi">librshell_m0.a</code> 作为静态库链进去（或写一个最小 Flutter plugin，<code data-page-node-id="QlyXDsM4UGm8Hi3lUUfVz6">ios/</code> 下挂 <code data-page-node-id="OIqCF9DgP61eTSxdGGIA52">vendored_libraries</code> + 一个 bridging header 声明 <code data-page-node-id="9DGzmweOsKimjz0tZa0oze">rshell_m0_smoke</code>）。</li>
+  <li data-page-node-id="7XvNFUas9l8gywbWIoNpKI">一屏页面：host / port / user / password 四个输入框 + 一个按钮 + 一块可滚动文本。<code data-page-node-id="JVVIbJnIRZr4tZgU2GVXky">dart:ffi</code> 调 <code data-page-node-id="tar7jZt5kyDptHMA3Ll638">rshell_m0_smoke()</code>，把返回的 JSON 里的 <code data-page-node-id="VVPIQZM7ljW3l5rBba47M7">text</code> 显示出来。<strong data-page-node-id="ooqmU48r2SQvkFwS3AWATB">这一步是暂时的</strong>，M1 会被 rinf 取代。</li>
+  <li data-page-node-id="pnpFKOZoUXZKvzPjXYXPnv">真机跑。看 transcript 里的提示符。</li>
+</ol>
+
+<div class="callout badbox" data-page-node-id="AQdGZTWvEdObXQn2c4DfWG">
+  <span class="t" data-page-node-id="TGQfKwEaOK0NSAeTB5L1wC">三个真机陷阱，按踩坑概率排序。</span>
+  <ol data-page-node-id="1wwmnJSQwsD1sYyVyahYwT">
+    <li data-page-node-id="XQtwCjdMHTmcWgigW2hcKn"><strong data-page-node-id="D26ObAIHNhIbQPKVBNK7m7">别用模拟器验收。</strong>模拟器跑在 macOS 用户态，<code data-page-node-id="HevuRqE8KVIdToMSWXJ06T">fork</code> / <code data-page-node-id="ph8AFNiROhWJS1XFSRxoq2">openpty</code> 全都在。拿它测「本地 PTY 在 iOS 上不工作」会得出错误结论（会「能跑」），反过来也会掩盖别的沙箱问题。M0 必须真机。</li>
+    <li data-page-node-id="8h46IO3EhG7kfEVosSiR1Z"><strong data-page-node-id="2G8bM9lhbLnntArwIt8zj0">局域网目标机会被本地网络隐私拦住。</strong>iOS 14+ 起，连局域网地址需要 <code data-page-node-id="v6SAfbFAblKHTjV9rWeUZT">NSLocalNetworkUsageDescription</code>，首次连接会弹权限框；<strong data-page-node-id="um2XaDFBdvQ0CIZyoVuoM0">未授权时 <code data-page-node-id="UvY5lc8dtCWQOqxY1yNd71">connect()</code> 表现为静默超时，不是报错</strong>——这会让人误判成 SSH 有问题。公网 VPS 没有这个问题。另外 macOS 目标机默认关闭「远程登录」，要先打开。</li>
+    <li data-page-node-id="guknZeSDhx1ZVIiF4TEIAy"><strong data-page-node-id="UpCLNW4DX64pXQBpJNdX5R">读循环必须有截止时间</strong>（见 1.3）。等 EOF 就是永久挂住。</li>
+  </ol>
+</div>
+
+<h3 data-page-node-id="Ev4blX6n92FkLDXLmbt1NS">3.3 已完成的环境改动</h3>
+<p data-page-node-id="aGSfN4NyYtNKiGLADBeSw7">为了做实测，本机加了两条命令（幂等、可随时撤销）：</p>
+<pre data-page-node-id="NUt8kWJlPg43VmYUI0nQfZ">rustup target add aarch64-apple-ios aarch64-apple-ios-sim</pre>
+<p data-page-node-id="BFv2y0kn9HyxDsP3zEXA2x">临时的探针与克隆在 <code data-page-node-id="MCGC6jDnLzqB5GuE5WRdvF">/tmp/rs_ios_probe</code>、<code data-page-node-id="IwpsDiBwiCK6G3JHcBSmkq">/tmp/rs_m0_probe</code>、<code data-page-node-id="uLdW1LjUEFk8xDy5TKmMuX">/tmp/rsHell_probe</code>，可以随时删。</p>
+
+<h2 id="reuse" data-page-node-id="knQJyTsuxDjDNLfKzrUBcV">四、复用 / 重写清单</h2>
+
+<p data-page-node-id="SMeN73yt1PFiqYgbo0E8Jv">这一节直接决定工作量。按 <code data-page-node-id="Ib1jMwmWEWHDOxNmdtUNHh">find src -name '*.rs' | xargs cat | wc -l</code> 实测：</p>
+
+<table data-page-node-id="nfiLeElPsHVe4nNH0hDI4h">
+  <tr data-page-node-id="MZN06qvIfXzX975n2C9KVC"><th data-page-node-id="wjbjYHuvy42LGnXKxCFhv7">Crate</th><th style="width:8%" data-page-node-id="No67hjZyp988fRnjRrPSKp">行数</th><th data-page-node-id="kcExBtHLi5i0tE0FnprNQT">iOS 上的处置</th></tr>
+  <tr data-page-node-id="SGSy1oNdFFR2pFOZQ1AHvL"><td data-page-node-id="1vHq8E4TFv5oeJwik5RfuF"><code data-page-node-id="wML4tkEuHhimNaayl9WEZJ">rshell-core</code></td><td data-page-node-id="JkAxfB4jKtfHHA7EYwV0ed">4,240</td><td data-page-node-id="nGQX2av7UtWJy7tix1jV5e"><span class="ok" data-page-node-id="kRfbciCnmL6pO0ujc0ZwPu">全量保留</span>。领域模型、连接目录、终端设置、<code data-page-node-id="KT1JpMzhabTqGjb1yXYMlU">RenderFrame</code> 类型、<code data-page-node-id="rtZxQPBIVPc9lLfmxfFNyw">protocol</code> 模块——全部与平台无关。</td></tr>
+  <tr data-page-node-id="bzD6pXPANkJUdggvFIlwDR"><td data-page-node-id="FNR1FIMqDX4aD8VgIUgeLo"><code data-page-node-id="Sv8ZjUkFBObQ0J5RwEfoTY">rshell-session</code></td><td data-page-node-id="zG8xyCZWkxPf51ZJUEruSX">7,036</td><td data-page-node-id="yiCzzysrXiK9q5PCNKBPga"><span class="ok" data-page-node-id="5luiMjysZrSaizznkPIgG5">保留</span>，去掉 <code data-page-node-id="dkTaHDM2DlyaLE2M3PCABX">transport/local*</code>、<code data-page-node-id="MfG6Rvzp4uEsCNecACsIwg">transport/pty</code>、<code data-page-node-id="zaseahyEP1q8dQjSWZXBen">transport/system_ssh</code>（iOS 死代码，实测已被链接器裁掉）。<code data-page-node-id="HyJAqY7q70jUykgMH9e1Hl">native_ssh</code>、<code data-page-node-id="QTArQak1zrPXbolX6BH1f3">alacritty_*</code>、<code data-page-node-id="JcMqextP0P4YHvjhk5X5jR">engine</code>、<code data-page-node-id="aw8BBN78JP07wanthYWYch">manager</code>、<code data-page-node-id="mFLs0vZkcGTVzc5g5NibSQ">actor</code> 全保留。</td></tr>
+  <tr data-page-node-id="a1IV3loSn9k7zQJSveVqzJ"><td data-page-node-id="Okdf08dOzhKyHFJFIAAEb5"><code data-page-node-id="z99uodO8Fbj316Pxsu7elA">rshell-platform</code></td><td data-page-node-id="jtVF4kOwV79bb9UHQlIKqj">1,306</td><td data-page-node-id="Fsf5i2XL5EMRft5zKUDYLU"><span class="warn" data-page-node-id="c4ORSeUP4dBzXQAiJI6Qpo">需要 iOS 分支</span>。关键点：<code data-page-node-id="wNrdjqL6wjJ2jqMfYmed9N">PlatformPaths::discover()</code> 用 <code data-page-node-id="dXGfQt4UpjPfmsp95a3NBw">directories::ProjectDirs</code>，在 iOS 上会落到沙箱内（<code data-page-node-id="ZM2wM7EbAfrLLZHNR5cTBL">$HOME</code> 指向 App 容器），大概率直接可用——<strong data-page-node-id="veKe2M5MEP2KmbRjPKW6jG">M0 刻意把它解耦了</strong>（<code data-page-node-id="fEh90VbqC3q7ErpRl0KsPM">known_hosts</code> 路径由参数传入），所以不阻塞。需要重做的是 clipboard / file_selection / <code data-page-node-id="7vETE4D36MifSblvkIrt5q">default_local_shell</code>。</td></tr>
+  <tr data-page-node-id="9T7YjlNqCwlumPGfVqgqbr"><td data-page-node-id="UTSaLeAX2oB9cyQF2DBPZ7"><code data-page-node-id="weDWlKM7SOzQ9fOIjqsSjV">rshell-storage</code></td><td data-page-node-id="oHDdgJhmb7Lw7Lu6YV7szt">4,785</td><td data-page-node-id="Dvs23NXahuW88p231rTjiA"><span class="ok" data-page-node-id="huQPGa8mBFgdhRKTFRPzbh">基本保留</span>。rusqlite bundled SQLite 在 iOS 上编译通过；keyring 走 <code data-page-node-id="9i91J8s27mfPKo3nML0q1i">protected</code> feature。</td></tr>
+  <tr data-page-node-id="kGDn40WlHgNmfSbfejcHgR"><td data-page-node-id="W054b5tYBgxGvkB4Y9zOuR"><code data-page-node-id="2spW63ymIbxRytosRXYuDz">rshell-ui</code></td><td data-page-node-id="DvFzFhCgru8mXZ2UCNJabG"><strong data-page-node-id="4D5klEuB4dAVmkKXpBIQ74">22,812</strong></td><td data-page-node-id="52XGliRCTEd371uQOruodP"><span class="bad" data-page-node-id="jkI2IOVd28XalpoXcOJBeE">全部重写</span>。这是 GTK4/Relm4 层：终端画布、选择、IME、连接编辑器、侧栏、标签、对话框、图标、自适应布局。换成 Flutter。</td></tr>
+  <tr data-page-node-id="DWaF1AVHUVKvej9cJawbqe"><td data-page-node-id="q42sQOoHrlrPdNubg6kJ3e">根 <code data-page-node-id="MyMO7FFS2NHfTtRGpKZ0d3">src/</code></td><td data-page-node-id="cl8yOeMTn0GyO5DLWV6seY">4,215</td><td data-page-node-id="zV9YBA1194PydWApefvCTW"><span class="bad" data-page-node-id="tVqSBeS9i1jwpNNOz1EzZm">全部重写</span>。GTK 主循环与 App 装配。业务逻辑已经在 <code data-page-node-id="jFl0Zrdib0djBsHSKxoXRB">rshell-core::application</code>（1,853 行）里，不是全白写。</td></tr>
+  <tr data-page-node-id="2caQesLbXowHtVER01fYqI"><td colspan="3" data-page-node-id="ADdOiXwnzEfR7YXEXeTHmo"><strong data-page-node-id="kjiRoO2R94KVJGmZmtcOvx">合计 44,394 行；其中保留 11,276 行（25%），重写约 27,027 行（61%）。</strong></td></tr>
+</table>
+
+<div class="callout warnbox" data-page-node-id="m49lJPIsQLqhDQOAaJudR3">
+  <span class="t" data-page-node-id="NLbq77hlroOLiMeHTYUpQB">这个比例值得直视。</span>
+  要重写的 Flutter 层（约 2.7 万行）<strong data-page-node-id="Xq0vKr6lFYMdY3261wvH35">是它要对话的 Rust 内核（1.1 万行）的 2.4 倍</strong>。
+  「Rust 不动」这个目标本身达成了——但达成它的代价是：绝大部分新代码是渲染与交互。这也是为什么 M1 的渲染性能是整个计划里唯一需要提前验证的技术风险。
+</div>
+
+<h3 data-page-node-id="SoBdhi7nYSGcO5WviY9uGh">4.1 四个传输在 iOS 上的可达性</h3>
+<table data-page-node-id="DqzZIVMM5FhzJ0D1tmLfu8">
+  <tr data-page-node-id="8j8RGssbr6RUzokJVQ72zf"><th data-page-node-id="AyNurhmF6dSSE9TuxxPAU5">传输</th><th data-page-node-id="fBGAF6S4Bj2uU8WsBBDV2I">iOS</th><th data-page-node-id="LTtGSFhvnNWL4KSfNydD94">原因</th></tr>
+  <tr data-page-node-id="o3JK6B1ityer8sw6G1tPm0"><td data-page-node-id="2lqiyt70nJ6nSB49QBzmdR"><code data-page-node-id="37Oh3amTGJfgdPTbryY2o4">native_ssh</code>（russh）</td><td data-page-node-id="NjL3wS9EmVIXhK2AOyKACr"><span class="ok" data-page-node-id="wWuGH4285mV8XAGluOemn1">可用</span></td><td data-page-node-id="cI7JNfk72Kd5Kp5IT7qzdi">纯 TCP + russh，PTY 开在远端。零 <code data-page-node-id="SBcTzqexaxY9I46ye7fRME">fork</code>。已实测链接产物不含任何 PTY 符号。</td></tr>
+  <tr data-page-node-id="A6z1cumQV9TZ8UH12XNVvr"><td data-page-node-id="dETBkNwgFrUOA2fJAgr2tO"><code data-page-node-id="QyunBJtNHvO2iPikFpDKqX">system_ssh</code></td><td data-page-node-id="ECZuGC4loNYVlRAWnh6eoh"><span class="bad" data-page-node-id="vcbmPRRyx1YTI7AcEkHmwm">不可用</span></td><td data-page-node-id="Di4NFDM7WFYSIAJS59YC0m">靠 <code data-page-node-id="IYkVmD2NnTa2E8Yxh1nHpz">build_system_ssh_argv</code> 启动系统 <code data-page-node-id="GHERx0sGEGwvOAAutAYyGP">ssh</code> 可执行文件。iOS 沙箱不允许 spawn 进程。</td></tr>
+  <tr data-page-node-id="cXExEaH6xT6IvCKYq2r7Jc"><td data-page-node-id="Kxq0rEIdYNuGdPJ81sPC6B"><code data-page-node-id="Zkgoj8h1Dn9eKWUfN4meWA">local</code>（portable-pty）</td><td data-page-node-id="ZCWaTOJQZuPbV88AyS41d7"><span class="bad" data-page-node-id="pdeiAMrGBffaqTYChZ5V2X">不可用</span></td><td data-page-node-id="wiClyiIkzyHR0wKypwSvvq">需要 <code data-page-node-id="BGtOOtvN1twVCY5lOF6UP1">fork</code> + <code data-page-node-id="IHOP73VR8zVinfHUFoALGD">openpty</code>。iOS <code data-page-node-id="nSWtAM40XEPbALtNYM9yTP">unistd.h</code> 里根本没有 <code data-page-node-id="lZydTdSQM3bZdikIh5wdrk">fork</code> 声明，沙箱也禁止。</td></tr>
+  <tr data-page-node-id="FFANR8UZ4SM5FK61a1scDh"><td data-page-node-id="437o5cYlYlE66xwB8QQccj"><code data-page-node-id="8IMmGEGHkxPn9ExbvKtxsI">pty</code></td><td data-page-node-id="l4vMG4m9oFWqFF2Uj7ouK8"><span class="bad" data-page-node-id="oMn0zO5Gfj4efKX8EGfTqU">不可用</span></td><td data-page-node-id="WZRJLWVW4sdtXhc49PtIB8">同上，是 <code data-page-node-id="p62HlzY5ABm0x0zfzW6knx">local</code> 的底层。</td></tr>
+</table>
+<p data-page-node-id="PLkok5zgAQ7bDXpKp0OGhR">好消息是这三个不可用的传输<strong data-page-node-id="JUOaZSBMBowmTgfa4PJbI0">都在 <code data-page-node-id="jFzp7rlfPCHVKfwypSUVjI">rshell-session</code> 内部，不需要从产品里「删功能」</strong>：iOS 侧的 Flutter 只要不暴露对应的入口即可，Rust 侧零改动。</p>
+
+<h2 id="ledger" data-page-node-id="Vq1wCyRHm7Yu22RfXf49Fk">五、决策台账</h2>
+
+<h3 data-page-node-id="h6xHGK8MdP2X0qE2gNmcET">5.1 我已经替你定的（不反对就照此执行）</h3>
+<table data-page-node-id="DQkgSxIurcgROYCkTI7BcX">
+  <tr data-page-node-id="AO8NGglTD6fwzMNDpGIXUu"><th style="width:30%" data-page-node-id="Z3JdEeykTawpIpy8MgV0rH">决定</th><th data-page-node-id="erpJpfOdlzfihMjXVwmu3Q">理由</th></tr>
+  <tr data-page-node-id="fTwXO4iQ0V3JnMrK8VmmHZ"><td data-page-node-id="9NAzXfT3BeCIilEb3zsySb">M0 拆成 M0a（macOS 命令行）+ M0b（真机）</td><td data-page-node-id="n1D36zliVtZ31cFODVjvbZ">M0a 不需要 Xcode、不需要真机、不需要外部服务器（环回测试），已经跑通。M0b 于是只剩「沙箱」一个未知量。</td></tr>
+  <tr data-page-node-id="T7mQJomvCgqjlY4C7PhsoX"><td data-page-node-id="P6CB2LeiD62oyNGtIKcx79">M0b 用 Flutter + <code data-page-node-id="J0BXyM7FAnledcXNB9UGdF">dart:ffi</code> 直调 C ABI，<strong data-page-node-id="3TsjvutONkWDZVHMACGbAj">先不接 rinf</strong></td><td data-page-node-id="f16d9EYLsgkhT9ussojFZ4">rinf 的构建集成是一个独立未知量，混进 M0 会让失败无法归因。Rust 产物两种宿主通用，不返工。</td></tr>
+  <tr data-page-node-id="1Ns5lkEbrmB2OAlvJ8SvS6"><td data-page-node-id="kLFhlmzZBzeBp2DZNgMmcC">主机密钥策略：M0 用 TOFU（接受并落盘），M3 换成真实 UI 确认</td><td data-page-node-id="YPxRZ7d1wG47yjM4vjpq0Y">M0 的前提是「不接 UI」，走完整交互确认会自相矛盾。TOFU 落盘 + 第二次不再询问，已经足够验证交互链路是活的。<strong data-page-node-id="62KXPdRGJM8MYLURRNCoFw">这是明确的技术债，必须在 M3 还清。</strong></td></tr>
+  <tr data-page-node-id="DUCdPftIa8eMhyckmjt6Vj"><td data-page-node-id="wAxtQR0Li1DvDHvpXELxSl">复用 <code data-page-node-id="IX20ulCMDVY17WjRENDlTn">rshell-core::protocol</code> 的 <code data-page-node-id="sjg0AYNvejDjAi2vYTmLIe">UiCommand</code>/<code data-page-node-id="Iy5ILXsB6uXFlPLT8nBD3a">AppEvent</code>，不在 Dart 里重建业务模型</td><td data-page-node-id="5moT3zKALjKYhHjO6bHHMo">连接目录、分组、设置、导入、分屏状态机都在 Rust 里且已可序列化。在 Dart 重写一份等于违反「业务用 Rust 跑」的前提。</td></tr>
+  <tr data-page-node-id="yC5BbriKwYo68Vrg5OyW1p"><td data-page-node-id="SmoWDbWPGHGzAUyjCBEV8V">帧的形态：传结构化 <code data-page-node-id="0y6it6NB1EZeBBx85L7fIL">RenderFrame</code>，Flutter 侧画</td><td data-page-node-id="tcALXRGYEK34rRnfLeDTs4">见 5.2 第 3 条待确认项——我倾向这个，但它影响 M1 是否返工，所以列为待定而不是已定。</td></tr>
+  <tr data-page-node-id="dUxuytkNxU3TKatkMga1Xh"><td data-page-node-id="qipMnguqNREUAJDMbt7zUG">不要在 release profile 里设 <code data-page-node-id="iCKNG1bUdlTkyCOv1ce4qf">panic = "abort"</code></td><td data-page-node-id="zcQ6KrUmD54ujbXHi1DqCR">rsHell 的 actor 靠 <code data-page-node-id="7d1FkgpJ172mLFfEh9J8If">catch_unwind</code> 把 panic 转成 <code data-page-node-id="56hJd44lklszNJafnqFtSs">SessionEvent::Crashed</code>（仓库里有 <code data-page-node-id="kHT799NbLP9qLiGmvnWwer">actor_panic_gtk_survival_macos</code> 测试守着）。abort 会直接毁掉这条韧性设计。</td></tr>
+</table>
+
+<h3 data-page-node-id="5CUfpxjzu7m9HsSOMIl6NE">5.2 需要你定的四件事</h3>
+<p data-page-node-id="7Qy9Qj1eib9Yqut5zacZUN">这四条我列在对话里单独问，因为它们都有真实的取舍，而且都会改里程碑的内容。</p>
+
+<h2 id="risk" data-page-node-id="XclD4lNqIjB69uNU7aa5vb">六、风险登记册</h2>
+
+<table data-page-node-id="YQ3ig88AdrDkRPw3jjrzdF">
+  <tr data-page-node-id="4ifkNAKs0VAoOfrZGLqG7p"><th style="width:24%" data-page-node-id="ojQEQbDjtzZ2KB2Qdu9w3l">风险</th><th style="width:12%" data-page-node-id="ostoBUiGjVYWL1YaXodYjS">等级</th><th data-page-node-id="GTATJpCrOkx7b0nfqsv5TJ">现状与应对</th></tr>
+  <tr data-page-node-id="dBmjbYmOMhEgJSPwdUbc2f"><td data-page-node-id="EykQvziDAxQBBaqUHDnRT9">Flutter 侧逐 cell <code data-page-node-id="MAm2WlCNmdZYECD0Qreoj5">TextPainter</code> 的性能</td><td data-page-node-id="ZazR8hHTUbbXCOoN7EhttQ"><span class="bad" data-page-node-id="sm9L2r7ofXZLTayDdVhh2f">高</span></td><td data-page-node-id="4KGYjycTP4RsE7pCMCQpvS">整条路线唯一需要提前验证的技术风险。120×40 = 4,800 cell/帧，60 fps 下是 28.8 万 cell/s。必须做「行内相同样式合并成 run + 字形缓存」，不能一个 cell 一个 <code data-page-node-id="IfGZoEQUuFofbIWAC482iy">TextPainter</code>。M1 就要压测到目标帧率，不能留到 M4。</td></tr>
+  <tr data-page-node-id="UIPtQao9ejo6OJBs6A4OAG"><td data-page-node-id="sC9gQdylOHUJT2M7xoOzHW">rinf 信号会丢弃中间消息</td><td data-page-node-id="SJaxCXgUvsXRNkBDwSbIml"><span class="warn" data-page-node-id="NNQkUE3wHhS8Ey3UCWt8Aw">中</span></td><td data-page-node-id="oaWbSrCmZftxUOjFPEwPYj">对终端帧这是<strong data-page-node-id="ZI2uvI2GCYHmlbee5Uix2n">免费的丢帧背压</strong>（表现为晚一帧），对字节流是灾难。所以设计上字节流根本不过边界——Rust 是唯一状态权威。<code data-page-node-id="1raD3VCSF9YYBVfs7CgDit">SessionClient.frames</code> 本来就是 <code data-page-node-id="Dw6nBGMks48Q5OZWPKspJp">watch::Receiver</code>（只保留最新），语义天然对齐。</td></tr>
+  <tr data-page-node-id="KRQNXqaTNlF83PNyYiu4uH"><td data-page-node-id="OntQ50jYdpBZY9XmgB6yS1">iOS 内存上限触发 jetsam</td><td data-page-node-id="urbEAFuqvg3Ho4ojN8l9DU"><span class="warn" data-page-node-id="v3B1sY5CpVLAnwahRd0NC1">中</span></td><td data-page-node-id="4OaVlc0OPxppE5ExWlYupS">桌面 <code data-page-node-id="4iE0Dj00wtxelmWepjnWuB">scrollback_lines</code> 上限 <code data-page-node-id="eprDl4qB5K5EyvKEZkh4Nm">1_000_000</code> 行在手机上会被系统直接杀进程。M4 必须设平台分级上界。</td></tr>
+  <tr data-page-node-id="AF8Jw2FTMYueVkoj6qHDvU"><td data-page-node-id="5TRuHRY1OVBt79W1YWHvaG">App Review 2.5.2</td><td data-page-node-id="iBQmKHtxWMU5nJmi3VNLZF"><span class="warn" data-page-node-id="5l7qur8zQWfHTu5Z5Nj23Y">中</span></td><td data-page-node-id="M00VjMfGXXlrOAlkPV4xbg">远程 shell / 可执行任意代码类应用有额外要求。M4 前要确定定位与描述策略。</td></tr>
+  <tr data-page-node-id="O6jrB3TsQ2257pqw7Tm856"><td data-page-node-id="RmvsWoHJrbGgakiOKp8uRq">iOS 后台生命周期</td><td data-page-node-id="CtfclAsKj4B1TND9b1lnLj"><span class="warn" data-page-node-id="G7qOj5kI7DOZgxB5KkjBqv">中</span></td><td data-page-node-id="6qNTAdWTSaG5xZGRlhlLPZ">进后台后 SSH 连接会被挂起。重连 / 保活策略要做成显式的产品行为，不能靠「不断开」蒙混。<code data-page-node-id="BRUjiBdT6nebG2MNvqpMfN">SessionUiCommand::Reconnect</code> 已在协议里。</td></tr>
+  <tr data-page-node-id="yaKLE7slvhhe2cdp2znE7A"><td data-page-node-id="gV5cXcrIweV24xRMyL1vFh">软键盘缺少 Ctrl / Esc</td><td data-page-node-id="BxCjWHJGo99unRRTQ6riQI"><span class="warn" data-page-node-id="Qy1gU9hWpTnFjIoFi3597m">中</span></td><td data-page-node-id="j93uMgWadxQQvv4nELEPdr">iOS 软键盘没有这些键，必须自建快捷键行。<code data-page-node-id="Heyoq12FaV0TmpsGkft45G">Cmd</code> 组合会被系统截获，能用的默认修饰键只有 Ctrl / Alt（还有长按）。</td></tr>
+  <tr data-page-node-id="fvDfRvCS7itVzpWJ0e8CFD"><td data-page-node-id="bHNApzmoRWUNoUAuqMirUR">russh / ring 的 iOS 编译</td><td data-page-node-id="WECW6oa47rA4FQaDwyRj6D"><span class="ok" data-page-node-id="exeFZjJlyIFk1G2qCFYkQU">已消除</span></td><td data-page-node-id="AcoyHVV527zoy3v3OCmkKP">device / sim 双目标实测通过。</td></tr>
+  <tr data-page-node-id="DAnISIkxHwa5rYkYKx7OMI"><td data-page-node-id="NLUwSq6FPq6mAPEMrog351">alacritty_terminal 在 iOS 上编译</td><td data-page-node-id="EiOzbSU7KxzBlEJBhAN9gG"><span class="ok" data-page-node-id="nui5PeEnJEEkUQX5dEyoR4">已消除</span></td><td data-page-node-id="txOsim9558NL9pfnI0yrGb">零改动通过，且 <code data-page-node-id="uBo6TduQl647q5YeAoBKG9">tty</code> 模块的死代码被链接器裁掉。</td></tr>
+  <tr data-page-node-id="H6m6IfviXjPjdIzgVbT92r"><td data-page-node-id="Gd6nZSepuXpccsVtRXWBjq">Rust 后端整体在 iOS 上编译</td><td data-page-node-id="vqOxngWecFB8mXxVG97X0H"><span class="ok" data-page-node-id="ZuB0uRgk0rP8HuMdoFyLsQ">已消除</span></td><td data-page-node-id="eu8WGF2acmDRbfIdiq5EDb">唯一阻塞是 keyring 的 <code data-page-node-id="vB36puBNSPCiY86FTQ71e0">protected</code> feature，已定位并给出补丁。</td></tr>
+  <tr data-page-node-id="hAFGvDNCaRlNxmpB890PWB"><td data-page-node-id="1vDRiRfhOkj2nygjLOgcR7">SSH 认证 / PTY / 请求序列的正确性</td><td data-page-node-id="7qVyGs8cMWPCfutk4DIkVZ"><span class="ok" data-page-node-id="t0ppCuwfReoxAfCyJa38hI">已消除</span></td><td data-page-node-id="QKYAmN6afxNl4MwIjzw98f">环回端到端跑通，参数、字节流、写路径、TOFU 全部验证。</td></tr>
+</table>
+
+<h2 id="appendix" data-page-node-id="EIBOfBeUS9dw66eTEKVpFh">附录：实测证据原文</h2>
+
+<h3 data-page-node-id="cmObLgOCiZeAW5Zuz7vebV">A. iOS 目标构建（device）</h3>
+<div class="evidence" data-page-node-id="vM4qK6RDJbPqe2ccJ2jzzS">
+  <div class="hd" data-page-node-id="mUAG20kGKYFcsa3txvF2hk">cargo build --release --lib --target aarch64-apple-ios</div>
+<pre data-page-node-id="hoRAZoXIIgUFFDuhoifPlc">warning: `rshell-m0` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 38s
+-rw-r--r--  43774512  target/aarch64-apple-ios/release/librshell_m0.a
+-rwxr-xr-x   3723156  /tmp/m0_rel.dylib            (strip -S -x 之后)</pre>
+</div>
+
+<h3 data-page-node-id="GJ6PqMZhl1Elp9phpRveox">B. 符号审计</h3>
+<div class="evidence" data-page-node-id="efQ4nDl4ou4wDOofTm9iUd">
+  <div class="hd" data-page-node-id="q7CHbweXMKQ1Vrc6xJxrFq">otool -L + nm -u（iOS dylib）</div>
+<pre data-page-node-id="7HZu91uFZSuZGolVPJfP3x">otool -L librshell_m0.dylib
+    /usr/lib/libiconv.2.dylib
+    /usr/lib/libSystem.B.dylib
+
+nm -u librshell_m0.dylib | grep -cE 'openpty|forkpty|login_tty|_fork|posix_spawn|execve'
+0
+
+nm -u librshell_m0.a | grep -cE 'openpty|forkpty|login_tty'
+7        # 静态库中残留（local PTY 代码），但最终链接时被裁掉</pre>
+</div>
+
+<h3 data-page-node-id="xg5JoxcDlnygaLtcZXvFOT">C. 环境版本</h3>
+<div class="evidence" data-page-node-id="gmQc6SAFtxIi9jvenQUsEp">
+  <div class="hd" data-page-node-id="mkxquPDSsA2MUHrwJUwFWX">工具链</div>
+<pre data-page-node-id="HqYiWaIYkyoyA9FXRafVn2">Xcode 16.2
+iPhoneOS SDK 18.2
+rsHell master @ b2ab8656079225dc2c920c24f5d9e0124f4f83e1 (2026-09-14)
+alacritty_terminal 0.26.0
+russh 0.62.5 (default-features = false, features = ["flate2", "ring", "rsa"])
+keyring 4.1.5 / apple-native-keyring-store 1.0.1
+portable-pty-psmux 0.9.6 (rsHell 自带 fork，走 [patch.crates-io])</pre>
+</div>
+
+<hr data-page-node-id="AyyMBypE1Kt12k2vUHYDAp"/>
+<p style="color:var(--muted); font-size:.9em;" data-page-node-id="SUCwuQCG36SHuiHXvUEzzf">
+配套文件：<code data-page-node-id="I3Fe2jEUFIIBLKxe5LSlt6">rshell-ios-m0/</code>（setup.sh · src/lib.rs · examples/m0.rs · examples/m0_loopback.rs · README.md）<br data-page-node-id="6yEhpuYG5uCqRuJPkcRw4i"/>
+上一份：<code data-page-node-id="VfjxsiJMz2G652Jh2XZSPR">docs/feasibility-2026-09-14.html</code>（可行性报告：alacritty 四层判定、rinf 事实纠正、界面的具体字节布局）<br data-page-node-id="OPu99JB30bi3f969vyPrjA"/>
+本次全部结论均来自本机实跑，命令与输出已在上文逐条给出，可复现。
+</p>
+
+</body>
+</html>

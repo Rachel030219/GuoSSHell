@@ -1,0 +1,38 @@
+# The importer must read this as data only; no ssh process is involved.
+User global-user # first obtained value wins
+Include included.conf
+
+Host production *.corp
+    HostName 10.0.0.8
+    User deploy
+    Port 2222
+    IdentityFile "C:/keys/production key"
+
+Host bastion-target
+    HostName target.internal
+    ProxyJump jump.example
+
+Host ipv6
+    HostName 2001:db8::10
+
+Host dynamic-host
+    HostName %h.example
+    IdentityFile ~/.ssh/id_dynamic
+
+Host option-host
+    HostName -unsafe
+
+Host -option-alias
+    HostName safe.example.test
+
+Host zero-port
+    Port 0
+
+Host high-port
+    Port 65536
+
+Host command-only
+    ProxyCommand "echo this must never execute"
+
+Match all
+    User ignored-by-static-import

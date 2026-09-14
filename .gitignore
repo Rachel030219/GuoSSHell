@@ -1,0 +1,25 @@
+# 构建产物
+target/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Flutter / iOS
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Pods/
+ios/.symlinks/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.ipa
+*.dSYM.zip
+
+# Rust
+Cargo.lock
+# 例外：vendored 上游的 lock 要留着，它记录的是上游的版本 pin
+!rust/upstream/Cargo.lock
+
+# macOS
+.DS_Store

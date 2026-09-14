@@ -1,0 +1,40 @@
+[package]
+name = "rshell-m0"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# 独立 workspace。upstream/ 是被 vendor 进来的上游源码，不是本 workspace 的成员，
+# 只通过 path 依赖引用。见 upstream/PROVENANCE.md。
+[workspace]
+
+[lib]
+name = "rshell_m0"
+# staticlib 给 iOS App / Flutter plugin 链；cdylib 用来做完整的链接检查。
+crate-type = ["staticlib", "cdylib", "lib"]
+
+# 必须与上游 workspace 的补丁一致，否则 portable-pty 会去 crates.io 拉上游版本，
+# 而上游用的是修掉 Windows INHERIT_CURSOR DSR 死锁的 fork。
+[patch.crates-io]
+portable-pty-psmux = { path = "upstream/third_party/portable-pty-psmux" }
+
+[dependencies]
+rshell-core = { path = "upstream/crates/rshell-core" }
+rshell-session = { path = "upstream/crates/rshell-session" }
+# 与 rshell-session 保持完全相同的版本与 feature，避免同一个 crate 出现两份不同类型。
+russh = { version = "=0.62.5", default-features = false, features = ["flate2", "ring", "rsa"] }
+secrecy = "0.10.3"
+# RenderFrame 的 rows/cells 是 Arc<[..]>，serde 必须显式打开 rc 才能序列化。
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+# rinf v8 的默认序列化格式，用它量边界上的真实字节数与编码耗时。
+bincode = { version = "2", features = ["serde"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net"] }
+
+[profile.release]
+# iOS 产物体积主要由这块决定；先给一个保守起点，别过早调优。
+lto = "thin"
+codegen-units = 1
+# 注意：不要设 panic = "abort"。rsHell 的 actor 依赖 catch_unwind 把 panic
+# 转成 SessionEvent::Crashed，abort 会直接毁掉这条韧性设计。

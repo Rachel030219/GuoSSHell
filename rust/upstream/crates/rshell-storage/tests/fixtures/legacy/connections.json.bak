@@ -1,0 +1,11 @@
+{
+  "folders": [],
+  "connections": [
+    {
+      "id": "66666666-6666-6666-6666-666666666666",
+      "name": "Recovered backup",
+      "host": "recovered.example.test",
+      "backend": "wezterm_ssh"
+    }
+  ]
+}

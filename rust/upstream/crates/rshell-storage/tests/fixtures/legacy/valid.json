@@ -1,0 +1,60 @@
+{
+  "folders": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "name": "  Production  "
+    }
+  ],
+  "connections": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "  prod  ",
+      "folder_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "host": "  prod.example.test  ",
+      "port": 2222,
+      "user": " deploy ",
+      "password": "rshell-task7-prod-secret-a4e68b",
+      "identity_file": "  C:/keys/prod_ed25519  ",
+      "remote_command": "  tmux new-session -A -s prod  ",
+      "note": "  production endpoint  ",
+      "backend": "system_open_ssh",
+      "accept_new_host": true,
+      "terminal": {
+        "terminal_type": " xterm ",
+        "initial_cols": 132,
+        "initial_rows": 44,
+        "scrollback_lines": 12000,
+        "delete_key": "ascii127",
+        "backspace_key": "vt220_del",
+        "left_alt_as_meta": false,
+        "right_alt_as_meta": true,
+        "enable_csi_u": true,
+        "enable_kitty_keyboard": true,
+        "enable_kitty_graphics": true,
+        "mouse_reporting": false,
+        "scroll_on_output": false,
+        "scroll_on_keypress": true,
+        "answerback": " legacy-answerback ",
+        "color_scheme": "nord",
+        "font_size": 16
+      }
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": " native-key ",
+      "folder_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "host": " key.example.test ",
+      "user": " keyuser ",
+      "identity_file": " ~/.ssh/id_ed25519 ",
+      "backend": "wez_term_ssh",
+      "accept_new_host": false
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": " system-agent ",
+      "host": " agent.example.test ",
+      "backend": "system_open_ssh",
+      "accept_new_host": false
+    }
+  ]
+}
