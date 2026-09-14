@@ -17,9 +17,9 @@ DerivedData/
 *.dSYM.zip
 
 # Rust
-Cargo.lock
-# 例外：vendored 上游的 lock 要留着，它记录的是上游的版本 pin
-!rust/upstream/Cargo.lock
+# 注意：**不**忽略 Cargo.lock。本仓库产出的是 App（不是库），而且上游是 pin 到
+# 具体 rev 的 git 依赖 —— lock 文件是构建可复现性的一部分，必须进版本控制。
+# 顺带：不要忽略 *.xcodeproj 的 project.pbxproj、也不要忽略 ios/ 下的配置模板。
 
 # macOS
 .DS_Store

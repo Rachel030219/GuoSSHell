@@ -1,9 +1,10 @@
-# rust/ —— 本项目的 Rust 代码
+# rust/ —— 本仓库的 Rust 代码
 
 当前内容是 **M0 的可执行验证**，不是产品代码。它把「SSH 本身在 iOS 上能不能用」
 这个问题在真机之前回答掉。完整规划见 [`../PLAN.md`](../PLAN.md)。
 
-依赖的是 vendored 在 `upstream/` 里的 rsHell 内核（见 [`upstream/PROVENANCE.md`](upstream/PROVENANCE.md)）。
+上游内核**不在这个目录里**——它是 pin 到具体 rev 的 git 依赖。来源、为什么这么做、
+以及许可都在 [`UPSTREAM.md`](UPSTREAM.md)。
 
 ## 文件
 
@@ -13,6 +14,8 @@
 | `examples/m0_loopback.rs` | **同进程起一个 russh 服务端**，把整条路径跑通。不需要任何外部服务器或凭证 |
 | `examples/m0.rs` | 打真实服务器：`cargo run --example m0 -- <host> <port> <user> <password> [known_hosts]` |
 | `examples/bench_frame.rs` | 帧传输性能基准，产出 `PLAN.md` §4 的全部数字 |
+| `Cargo.lock` | **进版本控制**（App 仓库 + git 依赖，复现性靠它） |
+| `LICENSES/` | 上游 rsHell / portable-pty-psmux 的 MIT 许可副本 |
 
 ## 快速开始
 
@@ -37,16 +40,19 @@ PTY/shell 请求序列 + 写路径 : YES
 主机密钥 TOFU 已落盘        : YES (...)
 ```
 
-真机 / iPad 验证（M0b）见 [`../ios-host/README.md`](../ios-host/README.md)。
+真机 / iPad 验证（M0b）见 [`../ios-host/README.md`](../ios-host/README.md)，
+起飞前检查跑 [`../scripts/link-check.sh`](../scripts/link-check.sh)。
 
 ## 已实测结论
 
 - `alacritty_terminal 0.26.0` 全链为 `aarch64-apple-ios` 编译通过，**零改动**。
-- 整个内核为 iOS 编译只卡一处：`apple-native-keyring-store` 的 `protected` feature
-  （已作为 vendored 改动固化在 `upstream/crates/rshell-storage/Cargo.toml`）。
-- 为 iOS 完整链接出的 dylib **不含** `_openpty` / `_forkpty` / `_login_tty` / `_fork` /
-  `_posix_spawn` / `_execve`——未解析符号只有 libSystem 的 POSIX socket/线程 + CommonCrypto。
-- release + strip 后 dylib ≈ **3.7 MB**（release `.a` 43.8 MB，strip 前 debug dylib 9.1 MB）。
+- 上游四个 crate 为 iOS 编译**不需要任何源码改动**：keyring 的 `protected` feature
+  从我们自己的 `Cargo.toml` 打开（Cargo 的 feature unification），
+  上游那份 `portable-pty-psmux` patch 在我们的目标上不参与编译。详见 `UPSTREAM.md`。
+- 两个切片（device / simulator）都能链进一个 iOS 可执行文件，**只需要额外 `-liconv`**。
+- **PTY 家族的符号要靠 `-Wl,-dead_strip` 裁掉。** 不加时最终可执行文件会导入
+  `_openpty` / `_login_tty` / `_fork` / `_posix_spawnp` 等；加上之后全部为 0，
+  体积 13 MB → 3.7 MB。这正好是 Xcode 的 `DEAD_CODE_STRIPPING = YES`（默认开）。
 
 ## 三个平台陷阱
 

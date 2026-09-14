@@ -4,13 +4,14 @@
 > 这份文件是实现期的唯一参考。所有结论都标注了证据来源；标「实测」的都是本机跑出来的，可复现。
 
 - 上游基线：`hugefiver/rsHell` @ `b2ab8656079225dc2c920c24f5d9e0124f4f83e1`（2026-09-14，MIT），
-  已 **vendor 进本仓库**在 `rust/upstream/`（见 `rust/upstream/PROVENANCE.md`）
+  **作为 pin 住 rev 的 git 依赖**（上游源码不进本仓库，且**零改动**；见 `rust/UPSTREAM.md`）
 - 应用名：**GuoSSHell**
 - 开发环境：macOS（Apple Silicon）· Xcode 16+ · Flutter 3.x（**本机具体版本号、工具绝对路径一律不入库**，见 §7）
 - 相关文档：
   - `docs/feasibility-2026-09-14.html`（可行性：alacritty 四层判定、rinf 事实纠正）
   - `docs/mvp-plan-2026-09-14.html`（里程碑与 M0 交接单）
-  - `rust/`（可运行的 M0 代码 + `bench_frame` 性能基准）、`ios-host/`（Swift 真机宿主）
+  - `rust/`（可运行的 M0 代码 + `bench_frame` 性能基准 + `UPSTREAM.md`）、
+    `ios-host/`（Swift 真机宿主 + 命令行链接检查）、`scripts/link-check.sh`
 
 ---
 
@@ -120,31 +121,45 @@ Flutter 侧不暴露入口即可。
 ### 3.2 编译与链接
 
 - `alacritty_terminal 0.26.0` 全链为 `aarch64-apple-ios` **零改动编译通过**。
-- `rshell-core` / `rshell-platform` / `rshell-storage` / `rshell-session` 为 iOS 编译通过。
-- **唯一硬阻塞**：`rshell-storage/Cargo.toml` 需要追加
+- `rshell-core` / `rshell-platform` / `rshell-storage` / `rshell-session` 为 iOS 编译通过，
+  且**上游源码零改动**。两处曾经以为必须改上游的地方，现在都在我们这边解决：
+  1. keyring 的 `protected` feature —— 在我们自己的 `Cargo.toml` 里加一条
+     `[target.'cfg(target_os = "ios")'.dependencies] apple-native-keyring-store = { features = ["protected"] }`，
+     靠 Cargo 的 **feature unification** 生效。不改上游的 `Cargo.toml`。
+     不这么做会直接 `error: The 'protected' feature is required on iOS`。
+  2. 上游的 `[patch.crates-io] portable-pty-psmux` —— 它的改动**全在 `src/win/*`**
+     与一个只给 dev-dependencies 用的 feature，我们的目标根本不编译这些文件。
+     而且换成 git 依赖后，cargo 不再解析依赖的 dev-dependencies，那个 feature 冲突自己消失。
+  详见 `rust/UPSTREAM.md`（含证据与代价）。
 
-  ```toml
-  [target.'cfg(target_os = "ios")'.dependencies]
-  apple-native-keyring-store = { version = "1.0.1", features = ["protected"] }
-  ```
+- **链接可行性已经用命令行验过，不需要 Xcode**（`./scripts/link-check.sh`）：
+  两个切片各自链进一个 iOS 可执行文件，**唯一的额外链接标志是 `-liconv`**。
 
-  原因：`keyring 4.1.5` 的 `v1` feature 在 iOS 上只启用
-  `apple-native-keyring-store/keychain`，而 iOS 没有 legacy keychain，只有 protected data store。
-  不补会直接 `error: The 'protected' feature is required on iOS`。
+- **PTY 家族的符号需要 `-Wl,-dead_strip` 才会消失 —— 这一条修正了早先的结论。**
+  早先的审计方法是错的：对 `.a` 跑 `nm -u`，而 Apple 的 `nm` 读不了 Rust 1.89/LLVM20
+  产出的部分目标文件（`Invalid attribute group entry`），于是**静默返回空结果**，
+  被误读成「命中数 0」。改用「链接成可执行文件后再审计」这个可信方法，实测：
 
-- 为 iOS 完整链接出的 dylib，未解析符号里
-  `openpty` / `forkpty` / `login_tty` / `fork` / `posix_spawn` / `execve` **命中数 0**。
-  只剩 libSystem 的 POSIX（socket / connect / getaddrinfo / kqueue / pthread / malloc）
-  与 CommonCrypto 的 `_CCRandomGenerateBytes`。
-  静态库 `.a` 里残留 7 处 PTY 引用，但最终链接被裁掉——**死代码，不卡人**。
+  | | 无 dead strip | 有 `-Wl,-dead_strip` |
+  |---|---|---|
+  | `_openpty` / `_login_tty` / `_fork` / `_posix_spawnp` | 各 1 | **0** |
+  | `posix_spawn*` 家族 | 9 | **0** |
+  | 未解析符号总数 | 280 | 103 |
+  | 可执行文件体积 | 13 MB | **3.7 MB** |
 
-- 体积（iOS device）：
+  这些符号来自 `transport/local.rs` / `pty.rs` / `system_ssh.rs` 三个 iOS 上从不调用的传输，
+  代码是死的，但符号被保留。`-Wl,-dead_strip` 就是 Xcode 的
+  `DEAD_CODE_STRIPPING = YES`（Release 默认开）。
+  **如果以后要把它们从编译图里彻底摘掉**，就得 fork 上游加 feature gate —— 那是 git 依赖的
+  第一个真实代价，记在 §9.2。
+
+- 体积（iOS device，git 依赖 + release）：
 
   | 产物 | 大小 |
   |---|---|
-  | `librshell_m0.a`（release，未 strip） | 43.8 MB |
-  | `librshell_m0.dylib`（release，已 strip） | **3.72 MB** ← Rust 内核真实增量 |
-  | `librshell_m0.dylib`（debug，已 strip） | 9.06 MB |
+  | `librshell_m0.a`（release，未 strip） | 65 MB |
+  | 链进 App 后（`-dead_strip`）的可执行文件 | **3.7 MB** ← Rust 内核真实增量 |
+  | 同上，但不加 dead strip | 13 MB |
 
 ### 3.3 M0 端到端（不需要任何外部服务器）
 
@@ -254,6 +269,19 @@ $ echo M0-ECHO
   2. **iPad 模拟器** —— 需要先补装模拟器 runtime（本机当前为空，见 §7）。
   3. 真机（iPhone 已注册两台，可选、非阻塞）。
 
+  **链接这一半已经验证掉了**：`./scripts/link-check.sh` 会把两个切片各链进一个 iOS 可执行文件
+  并审计符号，全程不用打开 Xcode。剩下的只有 Xcode 的 GUI 部分（建 target、加 run script 阶段、
+  填两个 Build Setting），**由瑞秋自己做**——手写/生成 `.pbxproj` 是给自己找麻烦。
+
+  > **M0b 是必经之路吗？不是「必经」，但它是这条路线里最便宜的止损点。**
+  > 它验证的是「**Rust 内核在一个真实 iOS App 里能不能跑**」，与 Flutter/rinf 无关。
+  > 跳过它直接做 M1，一旦失败就同时有两个嫌疑人（Rust 侧 / rinf 集成），
+  > 而 M0b 花的是 15 分钟 Xcode 点击。
+  >
+  > **验证完能删吗？`ios-host/`（Swift 壳）可以删，但建议等 M1 绿了再删**——
+  > 它是唯一能把「Rust 侧有问题」和「Flutter 侧有问题」区分开的东西。
+  > 真到 M1 之后它就纯粹是负担了，那时候删掉、连 `.git` 历史一起留着就行。
+
   > 诚实标注：模拟器与 "Designed for iPad" 跑在 macOS 用户态，**不能**用来证明
   > 「本地 PTY 在 iOS 上不工作」这类结论（会给出错误答案，见 §10.1）。
   > 但它们**可以**证明「iOS App 沙箱内、russh 出站 TCP 全链路能通」——
@@ -332,6 +360,36 @@ Rust 侧接口现成：`AuthPlan::from_profile(&profile, &vault)` + `CredentialV
 - App 生命周期：进后台后 SSH 连接怎么处理（`SessionUiCommand::Reconnect` 已在协议里）
 - 分发合规：App Review 2.5.2 对远程 shell 类应用有限制，定位与描述要提前想清楚。
 
+### M5 — 平台宽度（Android / macOS，**非阻塞，但架构上现在就别堵死**）
+
+**结论：能加，而且大部分是免费的**——因为已经定下的三条（Rust 是唯一权威、
+rinf 单向信号流、Flutter 只画不解析）本身就与平台无关。
+
+已经有的证据：
+
+| 目标 | 状态 |
+|---|---|
+| macOS（`aarch64-apple-darwin`） | **已经在跑**：`m0_loopback` 就是 macOS 二进制，SSH 全链路通 |
+| iOS / iPadOS | 编译 + 链接已验（§3.2） |
+| Android | **未验**。`cargo check --target aarch64-linux-android` 只卡在 C 工具链：`failed to find tool "aarch64-linux-android-clang"`——即缺 NDK，**不是代码问题**。内核的平台层只分 `windows` / `unix`（`rshell-platform` 里没有 `target_os` 分支），Android 走 unix 分支 |
+
+需要注意的（都不是拦路虎，是「别写反」）：
+
+1. **不要在 Dart 层写 `Platform.isIOS` 分支。** 平台差异属于 Rust 侧
+   （`rshell-platform` 已经是这个形状）。Dart 侧一旦开始判断平台，就说明有逻辑漏到前端了。
+2. **「本地 shell 面板」按平台开关，而不是从协议里删掉。** iOS 上不暴露入口即可
+   （`UiCommand::NewLocalTab` / `StartLocal` 都还在协议里）。macOS / Android 上
+   `fork`+`openpty` 都在，**这两个平台可以白拿上游的本地面板能力**——那是产品的加分项。
+   **这条直接决定了现在不要为了 iOS 去改上游删传输**（见 §9.2）。
+3. **帧协议与度量回传保持平台中立。** `TerminalSize{cols,rows,pixel_width,pixel_height,dpi}`
+   由前端量完回传，天然适用于任何平台。
+4. **明文命名别带 `ios_` 前缀**，构建脚本按 `PLATFORM_NAME` 分派（`ios-host/build-rust.sh`
+   已经是这个写法，加 Android 就是在同一个位置加分支）。
+
+**先做哪一步的证据**：等 M1 在 iPad 上绿了，先只做一件事——
+`cargo check --target aarch64-linux-android` 配上 NDK，把 Rust 侧的不确定量消掉。
+Android 的 Flutter 侧产物在 M1 之后基本是免费的。
+
 ---
 
 ## 6. 复用清单（铁律 3 的落地）
@@ -404,9 +462,14 @@ Rust 侧接口现成：`AuthPlan::from_profile(&profile, &vault)` + `CredentialV
 | M0 主机密钥策略：**TOFU 自动接受并落盘** | M0 前提是「不接 UI」，走完整确认会自相矛盾。**明确的技术债，M3 还清** |
 | release profile **不要设 `panic = "abort"`** | 上游 actor 靠 `catch_unwind` 把 panic 转成 `SessionEvent::Crashed`（有 `actor_panic_gtk_survival_macos` 测试守着），abort 会毁掉这条韧性设计 |
 | iPad 优先，iPhone 作为子项 | iPad 有大屏 + 硬件键盘 + 指针支持，能把最难的 IME/软键盘问题推到 M1-b |
-| **仓库形态：新建仓库 + vendor 上游源码** | 不 fork 上游（不做 PR 回上游的压力）、也不用 git 依赖（要能随手改内核）。上游只作为**基线**存在于 `rust/upstream/`，**不追求与上游保持同步**。改动处打 `[GuoSSHell 改动]` 标注，出处记在 `rust/upstream/PROVENANCE.md` |
+| **仓库形态：独立仓库 + 上游作 git 依赖** | 本仓库只装我们自己的代码。上游 pin 到具体 `rev`，**源码零改动**，所以能这么做；`Cargo.lock` 进版本控制保证复现。代价：首次构建要联网、上游只读。见 `rust/UPSTREAM.md` |
+| **keyring 的 iOS feature 从我们这边打开** | 不用改上游 `Cargo.toml`——Cargo 的 feature 是按包统一的。见 §3.2 |
+| **不应用上游的 `portable-pty-psmux` patch** | 它的改动全在 `src/win/*`，我们的目标不编译这些文件；换 git 依赖后 dev-dep 的 feature 冲突也自动消失 |
+| **iOS 上不删上游的本地传输，靠 `-Wl,-dead_strip` 裁符号** | 保留了 M5 里 macOS/Android 白拿本地面板的可能；将来真要摘掉就得 fork 上游（见 §9.2） |
+| **链接可行性用命令行验，不用 Xcode** | `scripts/link-check.sh`：两个切片各链进一个 iOS 可执行文件 + 符号审计 |
 | **连接方式：手工填写，不做自动发现** | 范围收窄，M0-c 只做「手填内网地址能连 + 权限处理 + 清晰失败提示」。mDNS/Bonjour 插件候选留在 §6.1 备查，不作为本期依赖 |
 | **iPad 验证靠 "Designed for iPad" + 模拟器** | 不需要真实 iPad 设备。但**必须**是 iPad 版二进制跑在 iOS 运行时上，不能拿 macOS 目标冒充（见 §5 M1-a） |
+| **平台宽度（Android / macOS）不阻塞，但架构上不许堵死** | 见 §5 M5。免费的部分（Rust 权威 + rinf + 纯 Flutter 绘制）现在就已经满足，要防的是「在 Dart 里写平台分支」和「为 iOS 删掉上游能力」这两件事 |
 
 ---
 
@@ -426,8 +489,20 @@ Rust 侧接口现成：`AuthPlan::from_profile(&profile, &vault)` + `CredentialV
    但 120×40 只是基准值。真实 iPad 上的默认字号/行列数要等 M1 画出来才好定。
 2. **M3 的凭证 UI 形态**：钥匙串存密码「每次连接都读」还是「读一次缓存在内存」，
    影响 Face ID / 自动填充的介入点。等 M3 再定。
-3. **自动发现（mDNS）是否作为 M5**：本期明确不做，但如果 M0-c 的手填体验在局域网里
-   太差，可以把它拉回来作为独立里程碑。候选插件已在 §6.1。
+3. **什么时候需要 fork 上游 —— git 依赖的第一个真实代价。**
+   目前上游零改动是**成立的**，但有两个已知的、可能逼我们 fork 的需求：
+   - **把 iOS 不可用的三个传输（`local` / `pty` / `system_ssh`）从编译图里摘掉**，
+     而不是靠链接器裁符号。现在靠 `-Wl,-dead_strip` 能压到 0（§3.2），所以**不急**；
+     但如果哪天想做 App Store 的静态审查友好度，或者要减 `.a` 的 65 MB，就得 fork 加 feature gate。
+   - **给 `rshell-platform` 加真正的 iOS 分支**（它现在只分 `windows`/`unix`）。
+     §2 里列过它「需要 iOS 分支」，但那可能是「实现时才发现不需要」——
+     等到 M0-c（内网权限）或 M3（keyring）真的碰到壁垒再决定。
+   **决策规则**：一旦要改上游，就 fork 到自己的仓库，把 `rev=` 换成 fork 的 commit；
+   在 `rust/UPSTREAM.md` 里记下改了哪几行、为什么。
+4. **自动发现（mDNS）要不要做**：本期明确不做，但如果 M0-c 的手填体验在局域网里太差，
+   可以把它拉回来做一个独立里程碑（编号往后排，不要把 §5 的 M5 占掉——M5 是平台宽度）。
+   候选插件已在 §6.1。
+5. **Android 的 NDK 与 Flutter 侧**：见 §5 M5。等 M1 绿了再动，先消 Rust 侧的不确定量。
 
 ---
 
@@ -462,7 +537,7 @@ Rust 侧接口现成：`AuthPlan::from_profile(&profile, &vault)` + `CredentialV
 ## 11. 可复现命令
 
 ```bash
-# 环境准备（幂等；上游已 vendor，不需要克隆）
+# 环境准备（幂等；上游是 git 依赖，第一次需要联网）
 ./scripts/setup.sh
 
 # 以下命令都在 rust/ 里跑
@@ -479,6 +554,10 @@ cargo run --release --example bench_frame
 
 # iOS 产物（静态库，要链进 App 才能跑）
 cargo build --release --lib --target aarch64-apple-ios
+cargo build --release --lib --target aarch64-apple-ios-sim
+
+# M0b 起飞前检查：两个切片各链进一个 iOS 可执行文件 + 符号审计（不用开 Xcode）
+cd .. && ./scripts/link-check.sh
 ```
 
 M0b 的 Xcode 工程建法见 `ios-host/README.md`。
@@ -487,20 +566,37 @@ M0b 的 Xcode 工程建法见 `ios-host/README.md`。
 
 ## 12. 当前进度
 
+**已完成**
+
 - [x] 可行性调研（alacritty 四层判定、rinf 事实纠正）
-- [x] Rust 后端 iOS 编译 + 链接 + 符号审计
-- [x] M0a 端到端（环回，无外部依赖）
-- [x] 帧传输性能基准（M0 的性能问题已闭环）
+- [x] M0a 端到端（进程内环回，无外部依赖）
+- [x] 帧传输性能基准（§4 的全部数字）
 - [x] 复用候选调研（渲染层 `terminal_view`；mDNS 备查）
-- [x] 上游 vendor 进 `rust/upstream/`，iOS keyring 补丁固化
-- [x] 全部产物收敛到 `GuoSSHell/`（Flutter 目录已清空）
-- [x] **仓库初始化**（`git init -b main`，227 个文件已暂存，首次提交信息在 `.git/FIRST_COMMIT_MSG.txt`）
-      ⚠ 本机 git 开了 `commit.gpgsign=true`，但 `~/.gnupg` 在当前进程里**不可读**
-      （`Operation not permitted`，不是 gpg 没装）——**首次提交需要在你自己终端里执行**：
-      `git commit -F .git/FIRST_COMMIT_MSG.txt`
-- [ ] **M0b：把 `librshell_m0.a` 链进 iOS App 跑起来**
-      阻塞在：需要一个建好的 Xcode App 目标（步骤见 `ios-host/README.md`）+ 一台可连的 SSH 服务器。
-      快路：目标选 **My Mac (Designed for iPad)**，不需要先下载模拟器 runtime。
-- [ ] M0-c 内网连接（手填地址 + 权限处理）
+- [x] 全部产物收敛到 `GuoSSHell/`（Flutter 容器目录已清空）
+- [x] **commit 1** `7b71efe`（227 个文件，带 GPG 签名，瑞秋自己签的）
+- [x] **上游改为 git 依赖**，源码零改动，vendored 副本已删除（227 → 23 个文件）
+- [x] **iOS 编译 + 链接实测**（§3.2）：两个切片都链得进 iOS 可执行文件，
+      唯一额外标志 `-liconv`；PTY/fork 符号靠 `-Wl,-dead_strip` 归零
+- [x] `scripts/link-check.sh`（M0b 起飞前检查，不用开 Xcode）
+
+**下一步**
+
+- [ ] **M0b：把 `librshell_m0.a` 链进 iOS App 在设备上跑起来**
+      - 链接那一半已由 `link-check.sh` 验掉；剩下是 Xcode GUI 部分，**由瑞秋自己做**（约 15 分钟）
+      - 步骤见 `ios-host/README.md`；快路是运行目标选 **My Mac (Designed for iPad)**，
+        不需要先下载模拟器 runtime
+      - 还需要一台可连的 SSH 服务器（公网优先）
+- [ ] M0-c 内网连接（手填地址 + 权限处理 + 引导跳设置页）
 - [ ] M1 一帧终端画面（含 M1-a iPad 验证，先于 M1-b iPhone）
 - [ ] M2 / M3 / M4
+- [ ] M5 平台宽度（Android / macOS）—— 非阻塞，架构上不堵死即可
+
+**关于 commit 2（上游改 git 依赖这一批）**
+
+本机 `commit.gpgsign=true`，而签名私钥在**硬件 OpenPGP 卡**上（`sec#` / `ssb>`），
+签名必须插卡 + 输 PIN，自动化环境做不到 —— 且 `~/.gnupg` 在自动化进程里也读不了。
+所以这批改动**已 `git add` 好**，提交信息在 `.git/COMMIT_MSG_git-deps.txt`，由瑞秋执行：
+
+```bash
+git commit -F .git/COMMIT_MSG_git-deps.txt
+```

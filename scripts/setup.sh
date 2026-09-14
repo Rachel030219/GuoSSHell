@@ -1,33 +1,40 @@
 #!/usr/bin/env bash
 # GuoSSHell 环境准备。幂等，可重复执行。
 #
-# 上游源码已经 vendor 在 ../upstream/ 里，这里不需要克隆任何东西。
+# 上游内核是 git 依赖（pin 到具体 commit，见 rust/UPSTREAM.md），
+# 所以这里不需要克隆任何东西，但首次需要联网让 cargo 把它拉下来。
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(cd "${HERE}/.." && pwd)"
 RUST="${PROJECT}/rust"
 
-echo "== 1/3 检查 vendored 上游 =="
-for crate in rshell-core rshell-session rshell-platform rshell-storage; do
-  if [ ! -f "${RUST}/upstream/crates/${crate}/Cargo.toml" ]; then
-    echo "error: 缺少 rust/upstream/crates/${crate}，仓库不完整" >&2
-    exit 1
-  fi
-done
-if ! grep -q 'cfg(target_os = "ios")' "${RUST}/upstream/crates/rshell-storage/Cargo.toml"; then
-  echo "error: rshell-storage 缺少 iOS keyring 补丁，见 rust/upstream/PROVENANCE.md" >&2
-  exit 1
+# cargo / rustup / rinf 都在 ~/.cargo/bin，但非登录 shell 常常没有这个 PATH。
+if [ -x "${HOME}/.cargo/bin/cargo" ]; then
+  export PATH="${HOME}/.cargo/bin:${PATH}"
 fi
-echo "   ok"
 
-echo "== 2/3 Rust iOS 编译目标 =="
-# cargo/rustup 在 ~/.cargo/bin，但非登录 shell 常常没有这个 PATH。
+CARGO=""
+for candidate in "$(command -v cargo 2>/dev/null || true)" "${HOME}/.cargo/bin/cargo"; do
+  if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then CARGO="${candidate}"; break; fi
+done
+
 RUSTUP=""
 for candidate in "$(command -v rustup 2>/dev/null || true)" "${HOME}/.cargo/bin/rustup"; do
   if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then RUSTUP="${candidate}"; break; fi
 done
 
+echo "== 1/3 检查 git 依赖 =="
+grep -q 'git = "https://github.com/hugefiver/rsHell", rev = "b2ab865' "${RUST}/Cargo.toml" \
+  || { echo "error: rust/Cargo.toml 里找不到 pin 住的上游 git 依赖" >&2; exit 1; }
+if [ -n "${CARGO}" ] && [ -f "${RUST}/Cargo.lock" ]; then
+  # 离线也要能过；拉不到只是提示，不算失败。
+  (cd "${RUST}" && "${CARGO}" fetch --locked) || \
+    echo "   警告：cargo fetch 失败（可能是网络）。首次构建需要能访问 GitHub。"
+fi
+echo "   ok"
+
+echo "== 2/3 Rust iOS 编译目标 =="
 if [ -z "${RUSTUP}" ]; then
   echo "   警告：找不到 rustup。装上 Rust 后重跑本脚本。" >&2
   echo "         https://rustup.rs" >&2
@@ -38,24 +45,20 @@ else
 fi
 
 echo "== 3/3 工具链 =="
-if [ -d "${HOME}/.cargo/bin" ] && ! command -v cargo >/dev/null 2>&1; then
-  # shellcheck disable=SC2016
-  echo '   提示：cargo 在 ~/.cargo/bin 但不在 PATH，用前先 export PATH="$HOME/.cargo/bin:$PATH"'
-  "${HOME}/.cargo/bin/cargo" --version | sed 's/^/   /'
+if [ -n "${CARGO}" ]; then
+  "${CARGO}" --version | sed 's/^/   /'
   for tool in rinf cargo-ndk protoc-gen-prost; do
     [ -x "${HOME}/.cargo/bin/${tool}" ] && echo "   已装：${tool}"
   done
 fi
+
 if command -v flutter >/dev/null 2>&1; then
   flutter --version | head -1
 else
   # Flutter 由 fvm 之类的版本管理器安装，不在默认 PATH 里。
   found=""
   for candidate in "${HOME}/fvm/default/bin" "${HOME}/fvm/versions"/*/bin; do
-    if [ -x "${candidate}/flutter" ]; then
-      found="${candidate}"
-      break
-    fi
+    if [ -x "${candidate}/flutter" ]; then found="${candidate}"; break; fi
   done
   if [ -n "${found}" ]; then
     echo "   flutter 在 ${found}（不在 PATH，用前 export PATH=\"${found}:\$PATH\"）"
@@ -75,4 +78,5 @@ echo "完成。接着跑："
 echo "  cd ${RUST}"
 echo "  cargo run --example m0_loopback                        # 不需要外部服务器"
 echo "  cargo run --release --example bench_frame              # 性能基准"
+echo "  cd ${PROJECT} && ./scripts/link-check.sh               # M0b 起飞前检查（不用开 Xcode）"
 echo "  cargo build --release --lib --target aarch64-apple-ios # iOS 静态库"

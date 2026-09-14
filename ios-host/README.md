@@ -11,6 +11,19 @@ Flutter 在这一步只会引入第二个未知量（构建集成），让失败
 
 Rust 产物在两种宿主下是同一个 `.a`，M1 换成 Flutter + rinf 时这部分**零返工**。
 
+## 先跑起飞前检查（不用打开 Xcode）
+
+```bash
+./scripts/link-check.sh
+```
+
+它会构建 device + simulator 两个切片的 `.a`，用 `clang` 把它们各自链进一个 iOS 可执行文件，
+然后审计符号。**实测结论：两个切片都链接成功，唯一的额外链接标志是 `-liconv`；
+PTY 家族符号加 `-Wl,-dead_strip` 后全部为 0。**
+
+也就是说，M0b 里唯一不是 GUI 操作的那个未知量（「`.a` 链进 iOS App 会不会缺东西」）
+已经被这个脚本回答掉了。剩下就是下面这些点几下的事。
+
 ## 手工建工程的步骤（约 15 分钟）
 
 1. Xcode → New Project → iOS → App。Product Name `GuoSSHell`，Interface **SwiftUI**，
@@ -29,6 +42,11 @@ Rust 产物在两种宿主下是同一个 `.a`，M1 换成 Flutter + rinf 时这
    ```
    `-liconv` 不是可选项：rusqlite 的 bundled SQLite 与 ring 在 Apple 平台会引用
    `/usr/lib/libiconv.2.dylib`，`otool -L` 实测可见，Xcode 不会自动带上。
+
+   **`DEAD_CODE_STRIPPING` 保持 `YES`**（Release 默认就是 YES，别去关它）。
+   实测：不加 dead strip 时最终可执行文件会导入 `_openpty` / `_login_tty` / `_fork` /
+   `_posix_spawnp` 等符号（来自 iOS 上从不调用的本地 PTY 传输，但符号被保留）；
+   加上之后**全部为 0**，体积从 13 MB 降到 3.7 MB。这是 App Store 送审前该干净的地方。
 5. **选运行目标。** 推荐先选 **My Mac (Designed for iPad)**（Apple Silicon 直接可用，不用下载模拟器 runtime，
    跑的是 iPad 版二进制、走 iOS 沙箱）。要更接近真机就补装 iPad 模拟器 runtime 后选 iPad 模拟器。
    ⚠ 工程里带 "My Mac" 的目标有两个，**别选成 macOS 那个**——那是 macOS 二进制，

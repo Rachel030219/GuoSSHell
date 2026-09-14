@@ -5,8 +5,8 @@ edition = "2024"
 license = "MIT"
 publish = false
 
-# 独立 workspace。upstream/ 是被 vendor 进来的上游源码，不是本 workspace 的成员，
-# 只通过 path 依赖引用。见 upstream/PROVENANCE.md。
+# 独立 workspace。上游内核不在本仓库里 —— 它是 pin 住 rev 的 git 依赖，
+# 且源码零改动。来源、为什么这么做、许可见 UPSTREAM.md。
 [workspace]
 
 [lib]
@@ -14,14 +14,31 @@ name = "rshell_m0"
 # staticlib 给 iOS App / Flutter plugin 链；cdylib 用来做完整的链接检查。
 crate-type = ["staticlib", "cdylib", "lib"]
 
-# 必须与上游 workspace 的补丁一致，否则 portable-pty 会去 crates.io 拉上游版本，
-# 而上游用的是修掉 Windows INHERIT_CURSOR DSR 死锁的 fork。
-[patch.crates-io]
-portable-pty-psmux = { path = "upstream/third_party/portable-pty-psmux" }
+# 注意：这里刻意**不**带上游根 crate 的 `[patch.crates-io] portable-pty-psmux`。
+# 上游那个 patch 的全部改动都在 `src/win/*`（Windows ConPTY 的 Job handle）
+# 与一个只给 dev-dependencies 用的 test-support feature —— 留档见
+# LICENSES/portable-pty-psmux-PATCH-NOTES.md。
+# 我们的目标是 iOS / macOS，那些文件根本不参与编译，所以直接从 crates.io
+# 取发布的 0.9.6 即可。（实测：去掉 patch 后 iOS 目标仍然编译通过。）
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# keyring 4.1.5 的 v1 feature 在 iOS 上只启用 apple-native-keyring-store/keychain，
+# 而 iOS 没有 legacy keychain，只有 protected data store，缺这个 feature 会直接：
+#   error: The `protected` feature is required on iOS
+#
+# 关键点：**不需要改上游的 Cargo.toml**。Cargo 的 feature 是按包统一(unification)
+# 的 —— 只要我们的依赖图里有人打开 `protected`，rshell-storage 那条路径也会看到它。
+# 这么写之后，上游源码就真的是零改动，才能走 git 依赖（见 PLAN.md §8）。
+apple-native-keyring-store = { version = "1.0.1", features = ["protected"] }
 
 [dependencies]
-rshell-core = { path = "upstream/crates/rshell-core" }
-rshell-session = { path = "upstream/crates/rshell-session" }
+# 上游内核走 **git 依赖**，精确 pin 到一个 commit，而不是把源码 vendor 进本仓库。
+# 好处：本仓库真的只是「基于 rsHell 改出来的独立仓库」，不含上游源码；
+#       provenance 就写在 Cargo.toml 这一行，升级就是改这一个 rev。
+# 代价：a) 全新环境首次构建需要网络；b) 上游代码只读 —— 真要改上游就必须先 fork。
+# 现在能这么做，是因为上游源码已经是**零改动**（见上面 keyring 那段注释）。
+rshell-core = { git = "https://github.com/hugefiver/rsHell", rev = "b2ab8656079225dc2c920c24f5d9e0124f4f83e1" }
+rshell-session = { git = "https://github.com/hugefiver/rsHell", rev = "b2ab8656079225dc2c920c24f5d9e0124f4f83e1" }
 # 与 rshell-session 保持完全相同的版本与 feature，避免同一个 crate 出现两份不同类型。
 russh = { version = "=0.62.5", default-features = false, features = ["flate2", "ring", "rsa"] }
 secrecy = "0.10.3"
