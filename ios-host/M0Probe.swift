@@ -3,9 +3,11 @@
 // 这不是 GuoSSHell 的 UI，M1 会被 Flutter + rinf 整体替换。
 // 它存在的唯一目的是把「iOS 沙箱里 SSH 通不通」这一个问题单独回答掉。
 //
-// 用法：在 Xcode 里新建一个 iOS App（Interface: SwiftUI），把本文件替换掉
-// ContentView.swift，按 ios-host/README.md 配好 bridging header / 链接参数 /
-// 构建阶段脚本，然后选真机运行。
+// 用法：在 Xcode 里新建一个 **iOS** App（Interface: SwiftUI；**别选 Multiplatform**），
+// 然后删掉模板生成的 GuoSSHellApp.swift 与 ContentView.swift —— 本文件自带 @main，
+// 本身就是完整的 App 入口，两个入口同时存在会互相打架，而模板那个还引用着已被删掉的
+// ContentView。再按 ios-host/README.md 配好 bridging header / 链接参数 / 构建阶段脚本。
+// 运行目标选 "My Mac (Designed for iPad)" 或 iPad 模拟器（前提：iOS platform 已下载）。
 
 import SwiftUI
 

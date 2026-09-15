@@ -6,7 +6,8 @@
 - 上游基线：`hugefiver/rsHell` @ `b2ab8656079225dc2c920c24f5d9e0124f4f83e1`（2026-09-14，MIT），
   **作为 pin 住 rev 的 git 依赖**（上游源码不进本仓库，且**零改动**；见 `rust/UPSTREAM.md`）
 - 应用名：**GuoSSHell**
-- 开发环境：macOS（Apple Silicon）· Xcode 16+ · Flutter 3.x（**本机具体版本号、工具绝对路径一律不入库**，见 §7）
+- 开发环境：macOS（Apple Silicon）· Xcode 16+ · Flutter 3.x
+  （**本机的具体版本号、工具绝对路径、真机清单、签名配置等一律不入库**，见 §7）
 - 相关文档：
   - `docs/feasibility-2026-09-14.html`（可行性：alacritty 四层判定、rinf 事实纠正）
   - `docs/mvp-plan-2026-09-14.html`（里程碑与 M0 交接单）
@@ -26,7 +27,7 @@
    这条对每一层都适用：渲染、输入、网络发现、连接存储，全都先找现成的。
 4. **Rust 是终端状态的唯一权威。** Dart 侧不得持有第二份终端状态机——这条是选技术方案的硬约束，
    任何让 Dart 也解析一遍 ANSI 的方案（例如直接用 `xterm.dart` 的 `Terminal`）都直接排除。
-5. **所有产物都放在 `GuoSSHell/` 里。** 不要在存放多个项目的容器目录里留文件。
+5. **所有产物都放在 `GuoSSHell/` 里。** 不要在存放多个项目的**容器目录**里留散落文件。
    仓库结构：Flutter app 在根，Rust 一律在 `rust/`（**不要占用 `ios/`**，那是 Flutter 自己的目录）。
    临时文件（探针、半成品克隆）用 `/tmp`，用完即走。
 
@@ -254,33 +255,40 @@ $ echo M0-ECHO
 
 每个里程碑只增加**一类**未知量。前一个是绿的前提下才做下一个。**验收顺序：iPad 先通，再谈 iPhone / iOS。**
 
-### M0 — SSH 直连
+### M0 — SSH 直连 —— ✅ 已完成
 
 写死地址和密码，先证明 SSH 本身在 iOS 上可行。无渲染、无输入、无 UI。
 
 - **M0a（macOS 命令行，不需要 Xcode）** —— <span>已完成</span>
   `cargo run --example m0_loopback`（不需要外部服务器）
   `cargo run --example m0 -- <host> <port> <user> <password>`（打真实服务器）
-- **M0b（在 iOS App 里跑起来）** —— 宿主用 `ios-host/` 里的 Swift 壳。
-  产物是 `librshell_m0.a`，**它不是 App，必须链进一个 iOS App 目标才能跑**。
-  两种跑法，按代价从低到高：
-  1. **"My Mac (Designed for iPad)"**（M1 可用，**零下载**）——把 iOS App 目标直接跑在 macOS 上，
-     走的是 iPad 的二进制与 iOS 沙箱，不是 macOS 版。
-  2. **iPad 模拟器** —— 需要先补装模拟器 runtime（本机当前为空，见 §7）。
-  3. 真机（iPhone 已注册两台，可选、非阻塞）。
+- **M0b（在 iOS App 里跑起来）** —— <span>已完成</span>
+  宿主用 `ios-host/` 里的 Swift 壳。产物 `librshell_m0.a` **不是 App，必须链进一个
+  iOS App 目标才能跑**。
 
-  **链接这一半已经验证掉了**：`./scripts/link-check.sh` 会把两个切片各链进一个 iOS 可执行文件
-  并审计符号，全程不用打开 Xcode。剩下的只有 Xcode 的 GUI 部分（建 target、加 run script 阶段、
-  填两个 Build Setting），**由瑞秋自己做**——手写/生成 `.pbxproj` 是给自己找麻烦。
+  实际跑通的方式：运行目标选 **"My Mac (Designed for iPad)"**（iPad 版二进制跑在 macOS 上、
+  走 iOS 沙箱），手填地址 + 用户名密码，**在内网 SSH 服务器上验证通过**。
+  建工程的完整步骤与四个坑见 `ios-host/README.md`。
+
+  ⚠ 有三个**不满足就根本跑不起来**的前提，全在 `ios-host/README.md` 里展开：
+  1. **iOS platform 必须单独下载。** Xcode 16 把平台支持拆出了 Xcode.app：SDK 随 Xcode 装
+     （`-showsdks` 能看到），但**能被选中的 destination 要另外下**。没下之前
+     `-showdestinations` 报 `iOS x.y is not installed`，运行目标里**一个 iOS 选项都没有**
+     —— 包括下面第 2 条。`xcodebuild -downloadPlatform iOS`（约 7–8 GB，含模拟器 runtime）。见 §10.12。
+  2. **"My Mac (Designed for iPad)" 只对纯 iOS target 出现。** 工程若用了 Xcode 的
+     "Multiplatform App" 模板（`SDKROOT = auto` + `SUPPORTED_PLATFORMS` 含 `macosx`），
+     Mac 上会直接编成**原生 macOS App**，这个选项**永远不会出现**。见 §10.13。
+  3. **Run Script 必须声明 Output Files**，否则 User Script Sandboxing 会拦住脚本
+     `cp` 到 `$(BUILT_PRODUCTS_DIR)`。见 §10.16。
 
   > **M0b 是必经之路吗？不是「必经」，但它是这条路线里最便宜的止损点。**
   > 它验证的是「**Rust 内核在一个真实 iOS App 里能不能跑**」，与 Flutter/rinf 无关。
   > 跳过它直接做 M1，一旦失败就同时有两个嫌疑人（Rust 侧 / rinf 集成），
-  > 而 M0b 花的是 15 分钟 Xcode 点击。
+  > 而 M0b 花的是十几分钟 Xcode 点击。
   >
   > **验证完能删吗？`ios-host/`（Swift 壳）可以删，但建议等 M1 绿了再删**——
   > 它是唯一能把「Rust 侧有问题」和「Flutter 侧有问题」区分开的东西。
-  > 真到 M1 之后它就纯粹是负担了，那时候删掉、连 `.git` 历史一起留着就行。
+  > 真到 M1 之后它就纯粹是负担了。
 
   > 诚实标注：模拟器与 "Designed for iPad" 跑在 macOS 用户态，**不能**用来证明
   > 「本地 PTY 在 iOS 上不工作」这类结论（会给出错误答案，见 §10.1）。
@@ -292,15 +300,19 @@ $ echo M0-ECHO
 （`Network` / `Authentication` / `HostKey` / `SshChannel`）；写路径回显成功；
 `known_hosts` 在 App 沙箱内落盘，第二次连接不再触发主机密钥交互。
 
-**子项 M0-c：本地网络连接（内网）**
+**子项 M0-c：本地网络连接（内网）** —— <span>已完成</span>
 
 - 公网机优先做，但内网连接是迟早要有的。
-- 需要 `NSLocalNetworkUsageDescription`（`NSBonjourServices` 只在用 Bonjour 发现时必需）。
+- **本期范围：手工填内网地址 + 权限处理 + 失败提示，不做自动发现**（见 §9）。
+- 需要 `NSLocalNetworkUsageDescription`。**Xcode 16 的正规做法不是在 `Info.plist` 里写 key**
+  —— 工程开了 `GENERATE_INFOPLIST_FILE` 时那个 plist 文件常常是空的 —— 而是在 target 的
+  Build Settings 里设 `INFOPLIST_KEY_NSLocalNetworkUsageDescription`，Xcode 会把它合进
+  最终 Info.plist。
+  `NSBonjourServices` 只在用 Bonjour **发现**时才必需；本期不做自动发现，所以**不要加**。
 - **iOS 没有「主动申请本地网络权限」的 API**，权限只能被第一次实际访问触发；
   未授权时 `connect()` **静默超时而不是报错**，所以代码必须把超时当作
-  「可能没授权」处理，并提供跳转设置页的引导。
-- **本期范围：手工填内网地址 + 权限处理 + 失败提示，不做自动发现**（见 §9）。
-  权限被拒后「跳系统设置页」的引导要找现成实现复用，**不要自己写**（见 §6.3）。
+  「可能没授权」处理，并提供跳转设置页的引导。这个引导要找现成实现复用，
+  **不要自己写**（见 §6.3）。
 
 ### M1 — 一帧终端画面
 
@@ -429,22 +441,23 @@ Android 的 Flutter 侧产物在 M1 之后基本是免费的。
 
 ---
 
-## 7. 环境前置（任意机器需满足什么）
+## 7. 环境要求
 
-> 本节只写**要求**。本机的版本号、工具绝对路径、真机清单等**一律不入库**。
+**本节只写「任何机器上都需要满足什么」。** 本机的版本号、工具绝对路径、真机清单、
+签名配置等**一律不入库**。
 
-| 项 | 要求 | 需要做的事 |
+| 项 | 要求 | 说明 |
 |---|---|---|
-| Mac | Apple Silicon | 这类机器上 "My Mac (Designed for iPad)" 可用，**iPad 验证的第一条路不依赖模拟器** |
-| Xcode | 16+，iOS SDK 与 Xcode 配套 | — |
-| Rust iOS 目标 | `aarch64-apple-ios` / `aarch64-apple-ios-sim` | — |
-| **Rust 工具链** | `cargo` 1.89+ / `rustup`，常装在 `~/.cargo/bin` 而**不在 PATH** | 用前 `export PATH="$HOME/.cargo/bin:$PATH"`（`scripts/setup.sh` 会提示） |
-| **`rinf` CLI** | 8.x。子命令：`config` / `template` / `gen` / `wasm` / `server` | 起手直接用 `rinf template` 铺 Flutter 骨架、`rinf gen` 生成 Dart 侧类型，**不手写桥接样板** |
-| 其他 CLI | `cargo-ndk`、`protoc-gen-prost` 可选 | 本项目用不上（不做 Android、不用 protobuf 走码流） |
-| **iOS 模拟器 runtime** | 随 iOS platform 一起装 | 需要模拟器时再补：Xcode → Settings → Components，或 `xcodebuild -downloadPlatform iOS` |
-| **Flutter / Dart** | 3.4x，常由 **fvm** 之类的版本管理器托管 | 用前自行 export PATH；`scripts/setup.sh` 会探测并提示 |
-| 已注册真机 | iPhone 13 mini / 12 mini | **本机设备名不入库**；M1-b 才用得上，非阻塞 |
-| **iPad** | **不需要真机**。验证走 "Designed for iPad" + iPad 模拟器（按需补装 runtime） | — |
+| macOS | Apple Silicon | "My Mac (Designed for iPad)" 只在这类机器上可用 |
+| Xcode | 16+ | §10 的坑清单都是对照 Xcode 16 记录的 |
+| iOS SDK | 与 Xcode 配套 | `xcodebuild -showsdks` 能看到即可 |
+| **iOS platform** | **必须单独下载** | **SDK ≠ platform。** 没装时 `-showdestinations` 报 `iOS x.y is not installed`，运行目标里一个 iOS 选项都没有。`xcodebuild -downloadPlatform iOS`（约 7–8 GB，含模拟器 runtime）。见 §5 M0b |
+| Rust | 1.89+ | 需要 `aarch64-apple-ios` / `aarch64-apple-ios-sim` 两个目标 |
+| `rinf` CLI | 8.x | M1 用 `rinf template` 铺 Flutter 骨架、`rinf gen` 生成 Dart 侧类型，**不手写桥接样板** |
+| Flutter / Dart | 3.4x | M1 之后才需要 |
+
+**工具不在 PATH 是常态**（cargo 常装在 `~/.cargo/bin`、Flutter 常由 fvm 之类的版本管理器
+托管）。`scripts/setup.sh` 会主动探测并提示，不需要把路径写死在文档里。
 
 ---
 
@@ -531,6 +544,48 @@ Android 的 Flutter 侧产物在 M1 之后基本是免费的。
 11. **Xcode 里 "My Mac" 有两个目标，选错等于白跑。** 名字都带 My Mac，但
     `My Mac (Designed for iPad)` 跑的是 **iPad 版二进制**，`My Mac` 跑的是 macOS 二进制。
     选后者再宣布「iPad 通了」是自欺——它连 UIKit 都没走。
+12. **`xcodebuild -showsdks` 里有 iOS 18.2 ≠ iOS platform 装了。** Xcode 16 把平台支持
+    拆出了 Xcode.app：**SDK 随 Xcode 装，但能被选中的 destination 要另外下**。
+    没下之前 `-showdestinations` 报 `iOS 18.2 is not installed`，运行目标里
+    **一个 iOS 选项都没有**。我之前混淆了这两者，在 M0b 上给出过
+    「Designed for iPad 零下载」的**错误结论**。
+13. **工程模板选 "Multiplatform App" 会堵死 "Designed for iPad"。** 那个模板生成
+    `SDKROOT = auto` + `SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator"`，
+    一个 target 同时支持 iOS / macOS / visionOS，于是 Mac 上直接编成**原生 macOS App**。
+    而「Designed for iPad」的前提正是 target **只**支持 iOS —— 两者互斥。
+    改法：target → General → **Supported Destinations** → 删 `Mac` / `Apple Vision`，
+    加 `Mac (Designed for iPad)`。
+14. **Xcode 的 Run Script 跑在 bash 3.2 上。** 是 `/bin/bash` 3.2.57，
+    不是 Homebrew 的 bash 5，也不是你的交互 shell。空数组展开 `"${arr[@]}"`
+    （配合 `set -u`）报 `unbound variable`，`${var,,}` 报 `bad substitution` ——
+    `ios-host/build-rust.sh` 一开始两条都犯了，Debug 构建必挂。
+    往 Run Script 里加东西之前，先 `/bin/bash -n` 过一遍。
+15. **Xcode 工程里 4 个手动配置点容易填错**，`ios-host/README.md` 里都标了 ⚠：
+    ① bridging header 要写相对 `SRCROOT` 的**整条路径**（只写文件名 →
+    `Build input file cannot be found`）；
+    ② `Other Linker Flags` 不能把 `-lrshell_m0 -liconv` 存成一个带引号的字符串
+    （→ `ld: library 'rshell_m0 -liconv' not found`），要拆成两个值；
+    ③ 模板自带的 `GuoSSHellApp.swift` 必须删（它和 `M0Probe.swift` 各有 `@main`，
+    且引用着已被删掉的 `ContentView`）；
+    ④ Multiplatform 模板留下的 macOS entitlements（`com.apple.security.app-sandbox`）
+    在 iOS 上没有意义。
+16. **Xcode 的 User Script Sandboxing 会拦住脚本往构建目录写文件。** Xcode 15+ 新建工程默认
+    `ENABLE_USER_SCRIPT_SANDBOXING = YES`，它生成的沙箱规则里显式
+    `(deny file-read* file-write* (subpath (param "CONFIGURATION_BUILD_DIR")))` ——
+    `CONFIGURATION_BUILD_DIR` 就是 `$(BUILT_PRODUCTS_DIR)`，而 `build-rust.sh` 正要往那儿
+    `cp librshell_m0.a`。报错：
+    `Sandbox: cp(1282) deny(1) file-write-create .../Debug-iphoneos/librshell_m0.a`。
+    **修法**：给该 Run Script 声明 **Output Files** = `$(BUILT_PRODUCTS_DIR)/librshell_m0.a`。
+    线索在沙箱文件末尾那句注释 `;; Allow read+write for declared and resolved (flattened)
+    outputs` —— 没声明输出时它下面是空的；声明后 Xcode 会补上
+    `(allow file-read* file-write* (literal (param "SCRIPT_OUTPUT_FILE_0")))`，
+    `literal` 比 `subpath` 具体，覆盖那条 deny。
+    详见 `ios-host/README.md` 坑 4。
+17. **「本机能构建通过」不等于「沙箱放行」。** 自动化进程里 `sandbox-exec` 可能拿不到
+    `sandbox_apply` 权限（报 `Operation not permitted`），此时脚本沙箱**根本没施加**，
+    构建会「成功」得毫无意义。判断沙箱是否真生效，要去读 Xcode 写出的那份 `.sb`：
+    `~/Library/Developer/Xcode/DerivedData/<Target>-*/Build/Intermediates.noindex/
+    <Target>.build/<Config>-<platform>/<Target>.build/*.sb`。
 
 ---
 
@@ -569,34 +624,66 @@ M0b 的 Xcode 工程建法见 `ios-host/README.md`。
 **已完成**
 
 - [x] 可行性调研（alacritty 四层判定、rinf 事实纠正）
-- [x] M0a 端到端（进程内环回，无外部依赖）
+- [x] **M0a** 端到端（进程内环回，无外部依赖）
 - [x] 帧传输性能基准（§4 的全部数字）
 - [x] 复用候选调研（渲染层 `terminal_view`；mDNS 备查）
-- [x] 全部产物收敛到 `GuoSSHell/`（Flutter 容器目录已清空）
-- [x] **commit 1** `7b71efe`（227 个文件，带 GPG 签名，瑞秋自己签的）
+- [x] 全部产物收敛到 `GuoSSHell/`
 - [x] **上游改为 git 依赖**，源码零改动，vendored 副本已删除（227 → 23 个文件）
 - [x] **iOS 编译 + 链接实测**（§3.2）：两个切片都链得进 iOS 可执行文件，
       唯一额外标志 `-liconv`；PTY/fork 符号靠 `-Wl,-dead_strip` 归零
-- [x] `scripts/link-check.sh`（M0b 起飞前检查，不用开 Xcode）
+- [x] `scripts/link-check.sh`（不用开 Xcode 的起飞前检查）
+- [x] `ios-host/build-rust.sh` 的 **bash 3.2** 兼容性修复
+- [x] **M0b：`librshell_m0.a` 在真实 iOS App 里跑通** ——
+      `My Mac (Designed for iPad)` 作为运行目标 + 内网 SSH 服务器 + 用户名密码认证通过。
+      建这个工程踩的四个坑（iOS platform / Multiplatform 模板 / bash 3.2 / 脚本沙箱）
+      全部记在 `ios-host/README.md`
+- [x] **M0c：内网连接** —— `INFOPLIST_KEY_NSLocalNetworkUsageDescription` 已配，
+      并在同一台内网服务器上验证通过。本期不做 mDNS 自动发现（§9）
 
-**下一步**
+**下一步：M1 —— 一帧终端画面**
 
-- [ ] **M0b：把 `librshell_m0.a` 链进 iOS App 在设备上跑起来**
-      - 链接那一半已由 `link-check.sh` 验掉；剩下是 Xcode GUI 部分，**由瑞秋自己做**（约 15 分钟）
-      - 步骤见 `ios-host/README.md`；快路是运行目标选 **My Mac (Designed for iPad)**，
-        不需要先下载模拟器 runtime
-      - 还需要一台可连的 SSH 服务器（公网优先）
-- [ ] M0-c 内网连接（手填地址 + 权限处理 + 引导跳设置页）
-- [ ] M1 一帧终端画面（含 M1-a iPad 验证，先于 M1-b iPhone）
-- [ ] M2 / M3 / M4
-- [ ] M5 平台宽度（Android / macOS）—— 非阻塞，架构上不堵死即可
+- [ ] `flutter create` + `rinf template` 铺骨架（**先 iPad**）
+- [ ] 把 `RenderFrame` 经 rinf 二进制通道送到 Dart，用 fork 出来的 `terminal_view` 绘制层画出来
+- [ ] 子项 M1-a：iPad 验证（不需要真机）；M1-b：iPhone 放到之后
+- [ ] M2 / M3 / M4 / M5
 
-**关于 commit 2（上游改 git 依赖这一批）**
+**关于提交**
 
-本机 `commit.gpgsign=true`，而签名私钥在**硬件 OpenPGP 卡**上（`sec#` / `ssb>`），
-签名必须插卡 + 输 PIN，自动化环境做不到 —— 且 `~/.gnupg` 在自动化进程里也读不了。
-所以这批改动**已 `git add` 好**，提交信息在 `.git/COMMIT_MSG_git-deps.txt`，由瑞秋执行：
+本项目的提交需要签名，而签名在自动化环境里做不到（私钥不在磁盘上，必须人工操作）。
+因此自动化只负责 `git add` 和把提交信息写成文件，最后一步由人工执行：
 
 ```bash
-git commit -F .git/COMMIT_MSG_git-deps.txt
+git commit -F <提交信息文件>
 ```
+
+---
+
+## 13. M0b 的 Xcode 壳怎么办（M1 迁移说明）
+
+**结论：保留在本地，不删、不提交。**
+
+它是 M0b 的一次性宿主，M1 换成 Flutter 之后就没有独立价值了。但它现在是唯一能把
+「Rust 侧坏了」和「Flutter 侧坏了」分开的东西，建议留到 **M1 绿了**再删。
+
+它**本来就不在本仓库里**（Xcode 工程是单独建的），所以「不提交」不需要额外做什么。
+
+### 到 M1 时，配置怎么迁移
+
+Flutter 生成的 `ios/Runner.xcodeproj` 和手建的壳**结构不同**，别指望照搬。逐项对照：
+
+| M0b 壳里的东西 | M1（Flutter + rinf）下怎么办 |
+|---|---|
+| Run Script 调 `build-rust.sh` | **这个机制要保留** —— Xcode 默认仍会开 User Script Sandboxing、仍用 bash 3.2，两个坑一个不少。脚本内容换成 rinf 的构建流程（`rinf template` 生成的骨架已经带好） |
+| Run Script 的 **Output Files** 声明 | **同样要加**，否则 `cp` 被沙箱拦（§10.16） |
+| `LIBRARY_SEARCH_PATHS` / `OTHER_LDFLAGS = -lrshell_m0 -liconv` | **`-liconv` 大概率仍需要**（rusqlite bundled SQLite 与 ring 的依赖不变）；链接方式改用 rinf 的（Cargokit / `rinf.framework`），由 Podfile 或 xcconfig 管 |
+| `SWIFT_OBJC_BRIDGING_HEADER` + C 头 | **不再需要。** rinf 走 Dart FFI 生成的绑定，不是 Swift 直接调 C —— 这是两套架构最大的差异 |
+| `DEAD_CODE_STRIPPING = YES` | **保持 YES**（Xcode 默认就是），PTY/fork 符号归零靠它 |
+| `INFOPLIST_KEY_NSLocalNetworkUsageDescription`（M0c 的成果） | **要搬。** M1 的内网连接同样需要它，否则权限失败表现为静默超时 |
+| `GuoSSHell.entitlements`（macOS `app-sandbox`） | 丢掉。那是 Multiplatform 模板的残留，iOS 上没意义 |
+| 壳自己的 `.git` | 不需要。M1 的产物进主仓库 |
+
+### 一句话
+
+**能迁移的是「配置清单与坑」，不是「工程文件」。** 那些坑已经全部写在
+`ios-host/README.md` 和本文档 §10 里 —— 即使壳哪天丢了，照着这两份文档重新点一遍
+也能复现。**所以不必为了「保存壳」而把它提交进仓库。**

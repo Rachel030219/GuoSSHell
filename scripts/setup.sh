@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(cd "${HERE}/.." && pwd)"
 RUST="${PROJECT}/rust"
 
-# cargo / rustup / rinf 都在 ~/.cargo/bin，但非登录 shell 常常没有这个 PATH。
+# cargo / rustup / rinf 通常装在 ~/.cargo/bin，但非登录 shell 常常没有这个 PATH。
 if [ -x "${HOME}/.cargo/bin/cargo" ]; then
   export PATH="${HOME}/.cargo/bin:${PATH}"
 fi
@@ -55,7 +55,7 @@ fi
 if command -v flutter >/dev/null 2>&1; then
   flutter --version | head -1
 else
-  # Flutter 由 fvm 之类的版本管理器安装，不在默认 PATH 里。
+  # Flutter 常由 fvm 之类的版本管理器安装，不在默认 PATH 里，顺手探测一下。
   found=""
   for candidate in "${HOME}/fvm/default/bin" "${HOME}/fvm/versions"/*/bin; do
     if [ -x "${candidate}/flutter" ]; then found="${candidate}"; break; fi
