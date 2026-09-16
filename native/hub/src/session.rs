@@ -10,12 +10,12 @@ use rinf::{DartSignal, RustSignal, RustSignalBinary, debug_print};
 use secrecy::SecretString;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use rshell_core::{
+use rshell_m0::rshell_core::{
     AuthenticationKind, ConnectionProfile, HostKeyDecision, InteractionRequest,
     InteractionResponse, RenderFrame, ResolvedTerminalProfile, TerminalOverrides,
     TerminalSettingsV1, TerminalSize, TransportKind, Viewport,
 };
-use rshell_session::{
+use rshell_m0::rshell_session::{
     AuthPlan, DefaultTerminalEngine, KnownHostsVerifier, NativeSshTransport, SessionTransport,
     TerminalEngine, TransportEvent, TransportRequest, interaction_channel,
 };

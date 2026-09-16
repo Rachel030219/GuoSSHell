@@ -11,8 +11,7 @@
 - 相关文档：
   - `docs/feasibility-2026-09-14.html`（可行性：alacritty 四层判定、rinf 事实纠正）
   - `docs/mvp-plan-2026-09-14.html`（里程碑与 M0 交接单）
-  - `rust/`（可运行的 M0 代码 + `bench_frame` 性能基准 + `UPSTREAM.md`）、
-    `ios-host/`（Swift 真机宿主 + 命令行链接检查）、`scripts/link-check.sh`
+  - `rust/`（可运行的 M0 代码 + `bench_frame` 性能基准 + `UPSTREAM.md`）
 
 ---
 
@@ -286,9 +285,9 @@ $ echo M0-ECHO
   > 跳过它直接做 M1，一旦失败就同时有两个嫌疑人（Rust 侧 / rinf 集成），
   > 而 M0b 花的是十几分钟 Xcode 点击。
   >
-  > **验证完能删吗？`ios-host/`（Swift 壳）可以删，但建议等 M1 绿了再删**——
-  > 它是唯一能把「Rust 侧有问题」和「Flutter 侧有问题」区分开的东西。
-  > 真到 M1 之后它就纯粹是负担了。
+  > **验证完能删吗？可以，且已经删了（2026-09-16，M1 全绿后退役）**——
+  > 仓库内的 `ios-host/` 与 `scripts/link-check.sh` 已移除；仓库外的 Xcode 工程
+  > （`~/Projects/Darwin/GuoSSHell`）由用户自行删除。踩坑知识保留在 §10 与 git 历史。
 
   > 诚实标注：模拟器与 "Designed for iPad" 跑在 macOS 用户态，**不能**用来证明
   > 「本地 PTY 在 iOS 上不工作」这类结论（会给出错误答案，见 §10.1）。
@@ -314,7 +313,7 @@ $ echo M0-ECHO
   「可能没授权」处理，并提供跳转设置页的引导。这个引导要找现成实现复用，
   **不要自己写**（见 §6.3）。
 
-### M1 — 一帧终端画面
+### M1 — 一帧终端画面 —— ✅ 已完成（2026-09-16；子项 M1-b 除外）
 
 字节 → `DefaultTerminalEngine::advance()` → `render(viewport, selection)` →
 `RenderFrame` → run 压缩 → rinf 信号 → Flutter 画出来。**只读**，不处理输入。
@@ -626,15 +625,14 @@ cargo run --example m0 -- <host> <port> <user> <password>
 # 性能基准（本文档 §4 的全部数字）
 cargo run --release --example bench_frame
 
-# iOS 产物（静态库，要链进 App 才能跑）
+# iOS 产物（静态库探针；M0b 壳退役后仅作编译冒烟）
 cargo build --release --lib --target aarch64-apple-ios
 cargo build --release --lib --target aarch64-apple-ios-sim
-
-# M0b 起飞前检查：两个切片各链进一个 iOS 可执行文件 + 符号审计（不用开 Xcode）
-cd .. && ./scripts/link-check.sh
 ```
 
-M0b 的 Xcode 工程建法见 `ios-host/README.md`。
+（M0b 的「起飞前检查」`scripts/link-check.sh` 已随壳退役；App 构建由
+flutter/Cargokit 全权负责。M0b 的 Xcode 工程建法在 git 历史的
+`ios-host/README.md` 里可考。）
 
 ---
 
@@ -659,7 +657,18 @@ M0b 的 Xcode 工程建法见 `ios-host/README.md`。
 - [x] **M0c：内网连接** —— `INFOPLIST_KEY_NSLocalNetworkUsageDescription` 已配，
       并在同一台内网服务器上验证通过。本期不做 mDNS 自动发现（§9）
 
-**下一步：M1 —— 一帧终端画面**
+**M0b/M0c 收尾与壳退役（2026-09-16）**
+
+- [x] **M0b 壳退役**：删除仓库内 `ios-host/` 与 `scripts/link-check.sh`（M0 阶段的
+      链接验证知识保留在 §10 与 git 历史）；仓库外的 Xcode 工程由用户自行删除
+- [x] **Rust workspace 合并**：`rust/`（rshell-m0）并入根 workspace，
+      `native/hub` 改为 path 依赖 + `rshell_m0` 再导出——上游 rev 只在
+      `rust/Cargo.toml` pin 一处，`Cargo.lock` 只有根一个（rust/ 的已删）；
+      iOS keyring `protected` feature 由 rust/ 侧 target 依赖经 unification 继续
+      生效（`cargo check --target aarch64-apple-ios` + 完整模拟器构建 + 60fps
+      冒烟实测通过）
+
+**M1 —— 一帧终端画面 —— ✅ 已完成（2026-09-16，真机 60fps 满帧、0 丢帧）**
 
 - [x] `flutter create` + `rinf template` 铺骨架（**先 iPad**）
 - [x] M1 Rust 侧：`native/hub` 信号层（Connect/Resize/Disconnect + Status/FrameUpdate）、
@@ -672,13 +681,15 @@ M0b 的 Xcode 工程建法见 `ios-host/README.md`。
       16 色 / truecolor / 反显 / 粗体 / CJK 2 列 / emoji 全部正确 →
       `RESIZE-ACK cols=98 rows=72`（旋转尺寸闭环）→ 流式日志滚动 → 光标块 →
       fps 计数器工作
-- [ ] 真机内网 SSH 复验（用户执行，✅ 已完成）+ 连续 `top`/`htop` 下的帧率达标确认：
-      **exec 模式已就绪**——连接表单新增「命令（可选）」字段（或 `GUOSH_CMD` dart-define），
-      填 `top`/`htop` 连接即执行，无需键盘（上游 `configure_channel`：`remote_command`
-      非空走 `channel.exec`，PTY 照开）。Rust 侧每 5s 发 `PerfStats`（render/pack
-      avg·max、帧均字节），Dart 侧按 `FrameUpdate.seq` 跳变计丢帧；实测注意
-      debug 构建的 Rust 开销高一个量级，验收以 release/profile 为准
+- [x] **M1 验收全绿（2026-09-16，用户确认）**：真机内网实测 **60fps 满帧率**。
+      实测工具链：exec 模式（连接表单「命令」栏 / `GUOSH_CMD`，上游 `configure_channel`
+      的 `remote_command` 非空走 `channel.exec`，PTY 照开）+ `scripts/m1bar.sh`
+      （60Hz×10s 进度条，600 帧绝对节拍）+ Rust 每 5s 发 `PerfStats`（render/pack
+      avg·max、帧均字节）+ Dart 按 `FrameUpdate.seq` 跳变计丢帧。
+      模拟器实测：600 帧 60.0Hz、**0 丢帧**、debug 构建单帧 render+pack ~2–5ms
+      （预算 16.67ms，release 更低）。
 - [ ] terminal_view fork（字形缓存 / Picture 重放 / 选择 / IME），见 §6.1 的 M1 决定
+      ——M1-b（iPhone 软键盘/小屏）之前做
 - [ ] 子项 M1-b：iPhone 适配
 - [ ] M2 / M3 / M4 / M5
 

@@ -8,7 +8,7 @@
 //! 行级脏标记上游没有暴露；M1 先发整帧压缩（典型 5.8–7.2 KB，TUI 满屏最坏 61 KB），
 //! 行级增量等上游/适配层有脏行信息后再加。
 
-use rshell_core::{CellAttributes, Color, RenderCell, RenderFrame};
+use rshell_m0::rshell_core::{CellAttributes, Color, RenderCell, RenderFrame};
 
 /// wire 格式（全部**小端**）：
 ///
@@ -91,10 +91,10 @@ fn write_attrs(attributes: CellAttributes, selected: bool, out: &mut Vec<u8>) {
 mod tests {
     #![allow(clippy::expect_used)]
     use super::pack_runs;
-    use rshell_core::{
+    use rshell_m0::rshell_core::{
         ResolvedTerminalProfile, TerminalOverrides, TerminalSettingsV1, TerminalSize, Viewport,
     };
-    use rshell_session::{DefaultTerminalEngine, TerminalEngine};
+    use rshell_m0::rshell_session::{DefaultTerminalEngine, TerminalEngine};
 
     fn size() -> TerminalSize {
         TerminalSize {

@@ -5,14 +5,15 @@ edition = "2024"
 license = "MIT"
 publish = false
 
-# 独立 workspace。上游内核不在本仓库里 —— 它是 pin 住 rev 的 git 依赖，
-# 且源码零改动。来源、为什么这么做、许可见 UPSTREAM.md。
-[workspace]
+# M0 的编译-链接探针 crate，现为**根 workspace 的成员**（../Cargo.toml）。
+# 上游内核不在本仓库里 —— 它是 pin 住 rev 的 git 依赖，且源码零改动；
+# `native/hub`（rinf 信号层）通过本 crate 的 `pub use` 再导出拿类型，
+# 所以**上游 rev 只在这里 pin 这一处**。来源与许可见 UPSTREAM.md。
 
 [lib]
 name = "rshell_m0"
-# staticlib 给 iOS App / Flutter plugin 链；cdylib 用来做完整的链接检查。
-crate-type = ["staticlib", "cdylib", "lib"]
+# crate-type 用默认的 `lib`（rlib）即可：staticlib/cdylib 是 M0b 壳时代
+# （已退役）的产物，作为 path 依赖时下游只用 rlib。
 
 # 注意：这里刻意**不**带上游根 crate 的 `[patch.crates-io] portable-pty-psmux`。
 # 上游那个 patch 的全部改动都在 `src/win/*`（Windows ConPTY 的 Job handle）
@@ -52,10 +53,3 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 # 只给 examples（m0_loopback / demo_server）用，不进 App 依赖图。
 [dev-dependencies]
 bytes = "1"
-
-[profile.release]
-# iOS 产物体积主要由这块决定；先给一个保守起点，别过早调优。
-lto = "thin"
-codegen-units = 1
-# 注意：不要设 panic = "abort"。rsHell 的 actor 依赖 catch_unwind 把 panic
-# 转成 SessionEvent::Crashed，abort 会直接毁掉这条韧性设计。

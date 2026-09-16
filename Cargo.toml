@@ -5,7 +5,7 @@
 
 [workspace]
 resolver = "3"
-members = ["native/*"]
+members = ["native/*", "rust"]
 
 [profile.release]
 # 与 rust/Cargo.toml 的 release 形态一致（M0 实测：体积主要由这两项决定）。

@@ -17,6 +17,12 @@
 use std::ffi::{CStr, CString, c_char};
 use std::sync::Arc;
 
+// 对下游（`native/hub`，rinf 的信号层）再导出上游内核：
+// 上游 git 依赖只在本 crate 的 Cargo.toml 里 pin 一次 rev，
+// hub 通过这里拿类型，避免第二处 rev 需要同步升级。
+pub use rshell_core;
+pub use rshell_session;
+
 use rshell_core::{
     AuthenticationKind, ConnectionProfile, HostKeyDecision, InteractionRequest,
     InteractionResponse, ResolvedTerminalProfile, TerminalOverrides, TerminalSettingsV1,
