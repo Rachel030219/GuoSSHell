@@ -1,0 +1,42 @@
+[package]
+# Do not change the name of this crate.
+name = "hub"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# `lib` is required for non-library targets,
+# such as tests and benchmarks.
+# `cdylib` is for Linux, Android, Windows, and web.
+# `staticlib` is for iOS and macOS.
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+wildcard_imports = "deny"
+
+[dependencies]
+rinf = "8.10.1"
+serde = { version = "1.0.219", features = ["derive"] }
+# rinf 模板默认跑 current_thread 运行时；SSH 会话需要 net / sync / io-util。
+tokio = { version = "1.45.0", features = ["rt", "macros", "time", "net", "sync", "io-util"] }
+# 边界上的密码在 Rust 侧接收处立刻包成 SecretString（PLAN.md §2.2）。
+secrecy = "0.10.3"
+
+# 上游内核：git 依赖，pin 与 rust/Cargo.toml **完全相同**的 rev。
+# ⚠ 为什么不直接 path 依赖 rust/（rshell-m0）：rust/ 必须保持独立 workspace
+#   （M0b 壳的 build-rust.sh 与 scripts/link-check.sh 都依赖 rust/target/ 独立产物），
+#   而 cargo 不允许同一棵目录树里出现两个 workspace 根被一条 path 依赖串起来。
+#   代价：**升级上游时两处 rev 要一起改**（见 rust/UPSTREAM.md）。
+rshell-core = { git = "https://github.com/hugefiver/rsHell", rev = "b2ab8656079225dc2c920c24f5d9e0124f4f83e1" }
+rshell-session = { git = "https://github.com/hugefiver/rsHell", rev = "b2ab8656079225dc2c920c24f5d9e0124f4f83e1" }
+
+# 与 rust/Cargo.toml 同理：keyring 4.1.5 在 iOS 上必须打开 `protected`
+# （iOS 没有 legacy keychain），靠 feature unification 从我们这边打开，不改上游。
+[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1.0.1", features = ["protected"] }
+
+# Uncomment below to target the web.
+# tokio_with_wasm = { version = "0.8.5", features = ["rt", "macros", "time"] }
+# wasm-bindgen = "0.2.100"

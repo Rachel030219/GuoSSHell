@@ -49,6 +49,10 @@ serde_json = "1"
 bincode = { version = "2", features = ["serde"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net"] }
 
+# 只给 examples（m0_loopback / demo_server）用，不进 App 依赖图。
+[dev-dependencies]
+bytes = "1"
+
 [profile.release]
 # iOS 产物体积主要由这块决定；先给一个保守起点，别过早调优。
 lto = "thin"

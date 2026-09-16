@@ -1,0 +1,15 @@
+# This file is used for telling Rust-related tools
+# where various Rust crates are.
+# This also unifies `target` output folder and
+# various Rust configurations.
+
+[workspace]
+resolver = "3"
+members = ["native/*"]
+
+[profile.release]
+# 与 rust/Cargo.toml 的 release 形态一致（M0 实测：体积主要由这两项决定）。
+# 绝不设 panic = "abort" —— 上游 actor 靠 catch_unwind 把 panic 转成
+# SessionEvent::Crashed（PLAN.md §8）。
+lto = "thin"
+codegen-units = 1

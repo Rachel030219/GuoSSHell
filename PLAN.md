@@ -410,7 +410,7 @@ Android 的 Flutter 侧产物在 M1 之后基本是免费的。
 
 | 需求 | 候选 | 状态 | 备注 |
 |---|---|---|---|
-| **终端渲染层**（M1 核心） | [`terminal_view`](https://pub.dev/packages/terminal_view) | pub.dev v0.1.x，MIT，fork 自 xterm.dart 4.0.0 | **首选 fork 对象。** 移动端优先，changelog 明确写了「把相邻同风格单元格合并成一个 paragraph、相邻背景合并成一个 rect、把不再变化的行录成 Picture 重放、光标在 render object 里闪烁」——**正好就是 §4.3 测出来的那套优化**，而且已经实现了。目标就是「mid-range Android 上把忙碌的 `tail -f` 压到 60fps」 |
+| **终端渲染层**（M1 核心） | [`terminal_view`](https://pub.dev/packages/terminal_view) | pub.dev v0.2.0（2026-09-02，Termphin），MIT，fork 自 xterm.dart 4.0.0 | **首选 fork 对象。** 移动端优先，changelog 明确写了「把相邻同风格单元格合并成一个 paragraph、相邻背景合并成一个 rect、把不再变化的行录成 Picture 重放、光标在 render object 里闪烁」——**正好就是 §4.3 测出来的那套优化**，而且已经实现了。目标就是「mid-range Android 上把忙碌的 `tail -f` 压到 60fps」 |
 | 同上（备选） | [`lollipopkit/xterm.dart`](https://github.com/lollipopkit/xterm.dart) | MIT，活跃 | 有 Unicode 16 宽度表、grapheme cluster、**字形图集（glyph atlas）**、`CharMetricsCache` |
 | 同上（备选） | [`dart_xterm`](https://github.com/cdrury526/dart_xterm) | MIT，标称 production-grade | xterm.dart 的另一个维护分支 |
 | **mDNS / Bonjour 发现**（暂不实施） | [`nsd`](https://pub.dev/packages/nsd) | pub.dev 5.0.1 | iOS 13+，多平台，使用平台原生 API。**已决定 M0-c 不做自动发现，此条备查** |
@@ -423,6 +423,14 @@ Android 的 Flutter 侧产物在 M1 之后基本是免费的。
 选择手柄 / IME 接入 / 主题 / 鼠标 / 超链接 / 搜索 / OSC 52），
 把数据源换成来自 Rust 的 `RenderFrame`。
 **绝不使用它的解析器与缓冲区**——那会造出第二份终端状态权威。
+
+**M1 第一遍的渲染决定（2026-09-15）：** M1 先用了一个 ~200 行的自写 `CustomPainter`
+（`lib/src/terminal/terminal_painter.dart`）把 run 压缩帧画出来，理由：terminal_view 的
+render object 与它自己的 `Terminal` 缓冲类型耦合，换数据源必须 fork，是独立的一块工程；
+而 M1 的核心风险在「整条管线 + 帧率」，run 帧是纯展示数据、不含任何终端状态，自写
+painter 不违反铁律 4。**terminal_view fork 仍是既定方向**（字形缓存 / CharMetricsCache /
+不动行的 Picture 重放 / 选择手柄 / IME），排到 M1-b 之前做；到时把本 painter 的
+「按 run 起始列绝对定位 + 宽字符簇定位」语义原样搬过去。
 
 ### 6.2 明确不用
 
@@ -586,6 +594,17 @@ Android 的 Flutter 侧产物在 M1 之后基本是免费的。
     构建会「成功」得毫无意义。判断沙箱是否真生效，要去读 Xcode 写出的那份 `.sb`：
     `~/Library/Developer/Xcode/DerivedData/<Target>-*/Build/Intermediates.noindex/
     <Target>.build/<Config>-<platform>/<Target>.build/*.sb`。
+18. **rinf 的 Rust 侧不要用 `current_thread` tokio 运行时。** `rinf template` 默认是
+    `#[tokio::main(flavor = "current_thread")]`，实测 M1 的 SSH 连接在 TCP 建立后的
+    握手/TOFU 交互回合**无限挂起**（同样代码在 M0 验证过的 `multi_thread` 上立即通过）。
+    hub 的 main 已改为 `flavor = "multi_thread", worker_threads = 2`（与
+    `rust/src/lib.rs` 的 `blocking_smoke` 一致）。症状识别：`connect().await` 不返回、
+    对端却看到全部请求序列走完、无任何报错。
+19. **rinf 8.10 的 `rinf template` 不会把 Dart 包 `rinf` 加进 pubspec**（只加 `meta` 和
+    `tuple`），但模板的 `main.dart` 就在 import 它——不补 `flutter pub add rinf`
+    会在 analyze/构建时报 `Undefined class 'RustSignalPack'` / 找不到 `package:rinf`。
+    另外 v8.10 没有 `#[signal(binary)]` 属性：二进制信号用 `#[derive(RustSignalBinary)]`，
+    字节作为 `send_signal_to_dart(binary)` 的**方法参数**传，不是字段。
 
 ---
 
@@ -642,9 +661,20 @@ M0b 的 Xcode 工程建法见 `ios-host/README.md`。
 
 **下一步：M1 —— 一帧终端画面**
 
-- [ ] `flutter create` + `rinf template` 铺骨架（**先 iPad**）
-- [ ] 把 `RenderFrame` 经 rinf 二进制通道送到 Dart，用 fork 出来的 `terminal_view` 绘制层画出来
-- [ ] 子项 M1-a：iPad 验证（不需要真机）；M1-b：iPhone 放到之后
+- [x] `flutter create` + `rinf template` 铺骨架（**先 iPad**）
+- [x] M1 Rust 侧：`native/hub` 信号层（Connect/Resize/Disconnect + Status/FrameUpdate）、
+      会话 actor（复用 M0 验证过的装配）、`pack_runs` 从 `bench_frame.rs` 提升进
+      `frame_codec.rs`（`stable_row` 保持 i64 不截断；行级脏增量等上游暴露脏行信息再加）
+- [x] M1 Dart 侧：帧解码 + run painter（§6.1 的 M1 决定）+ 连接表单 + 尺寸回传 +
+      fps 计数器
+- [x] **端到端实测（iOS 模拟器，iPad Pro 11-inch）**：`rust/examples/demo_server.rs`
+      （无凭证环回服务器，probe/probe，密钥稳定）→ App 连上 → PTY-ACK →
+      16 色 / truecolor / 反显 / 粗体 / CJK 2 列 / emoji 全部正确 →
+      `RESIZE-ACK cols=98 rows=72`（旋转尺寸闭环）→ 流式日志滚动 → 光标块 →
+      fps 计数器工作
+- [ ] 真机内网 SSH 复验（用户执行）+ 连续 `top`/`htop` 下的帧率达标确认
+- [ ] terminal_view fork（字形缓存 / Picture 重放 / 选择 / IME），见 §6.1 的 M1 决定
+- [ ] 子项 M1-b：iPhone 适配
 - [ ] M2 / M3 / M4 / M5
 
 **关于提交**

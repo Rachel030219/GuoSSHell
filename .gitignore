@@ -23,3 +23,16 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# IDE
+.idea/
+*.iml
+
+# Rust related
+/.cargo/
+/target/
+
+# Generated signals
+/lib/src/bincode
+/lib/src/serde
+/lib/src/bindings
