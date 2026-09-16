@@ -83,13 +83,26 @@ impl Handler for DemoHandler {
     async fn shell_request(
         &mut self,
         channel: ChannelId,
-        _session: &mut Session,
+        session: &mut Session,
     ) -> Result<(), Self::Error> {
         eprintln!("[server] shell_request -> starting demo stream");
-        let _ = _session.channel_success(channel);
-        if let Some(channel) = self.channel.take() {
-            tokio::spawn(demo_stream(channel));
-        }
+        self.start_session(channel, session)
+    }
+
+    async fn exec_request(
+        &mut self,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let command = String::from_utf8_lossy(data).to_string();
+        eprintln!("[server] exec_request cmd={command}");
+        let _ = session.channel_success(channel);
+        let Some(channel) = self.channel.take() else {
+            return Ok(());
+        };
+        // 测试服务器才这么干：把命令当真在本机执行，stdout/stderr 直通频道。
+        tokio::spawn(run_real_command(channel, command));
         Ok(())
     }
 
@@ -124,6 +137,81 @@ impl Handler for DemoHandler {
     }
 }
 
+impl DemoHandler {
+    /// shell 与 exec 共用：确认频道 + 起演示流。
+    fn start_session(
+        &mut self,
+        channel: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), russh::Error> {
+        let _ = session.channel_success(channel);
+        if let Some(channel) = self.channel.take() {
+            tokio::spawn(demo_stream(channel));
+        }
+        Ok(())
+    }
+}
+
+/// 测试服务器专用：真实执行命令，stdout/stderr 直通频道。
+/// 进度条脚本的 `\r` 重画会原样进引擎——正好当 60Hz 帧源。
+async fn run_real_command(channel: Channel<Msg>, command: String) {
+    use tokio::io::AsyncReadExt;
+
+    let mut child = match tokio::process::Command::new("bash")
+        .arg("-c")
+        .arg(&command)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = channel
+                .data_bytes(format!("exec failed: {error}\r\n").into_bytes())
+                .await;
+            return;
+        }
+    };
+
+    async fn pipe<R: tokio::io::AsyncRead + Unpin>(
+        mut stream: R,
+        channel: &Channel<Msg>,
+    ) -> Option<()> {
+        let mut buffer = vec![0u8; 8192];
+        loop {
+            match stream.read(&mut buffer).await {
+                Ok(0) | Err(_) => return None,
+                Ok(n) => channel.data_bytes(buffer[..n].to_vec()).await.ok()?,
+            }
+        }
+    }
+
+    // stdout / stderr 并行泵入频道；任一端结束（或频道关闭）就收尾。
+    // 1 小时兜底超时防止测试服务器挂死。
+    let mut code = 0u32;
+    if let (Some(out), Some(err)) = (child.stdout.take(), child.stderr.take()) {
+        tokio::select! {
+            _ = pipe(out, &channel) => {}
+            _ = pipe(err, &channel) => {}
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3600)) => {
+                code = 124;
+            }
+        }
+    }
+
+    // 真 sshd 的收尾序列：exit-status → EOF → close（App 据此弹「已断开」）。
+    let _ = child.start_kill();
+    let status = child.wait().await;
+    if let Ok(status) = status {
+        if let Some(c) = status.code() {
+            code = c as u32;
+        }
+    }
+    let _ = channel.exit_status(code).await;
+    let _ = channel.eof().await;
+    let _ = channel.close().await;
+}
+
 /// 横幅 + 持续日志流。颜色形态故意覆盖 M1 验收的每一项：
 /// 16 色 / truecolor / 反显 / 粗体 / CJK 宽字符 / emoji / 长空白 run。
 async fn demo_stream(channel: Channel<Msg>) {
@@ -153,7 +241,11 @@ async fn demo_stream(channel: Channel<Msg>) {
             "\x1b[32mOK\x1b[0m [{elapsed:8.3}] 日志行 {seq}：帧压缩与脏行增量实测中，这是一段较长的中文文本\r\n"
         );
         seq += 1;
-        if channel.data_bytes(Bytes::copy_from_slice(line.as_bytes())).await.is_err() {
+        if channel
+            .data_bytes(Bytes::copy_from_slice(line.as_bytes()))
+            .await
+            .is_err()
+        {
             return;
         }
     }

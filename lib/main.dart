@@ -14,6 +14,7 @@ const _autoHost = String.fromEnvironment('GUOSH_HOST');
 const _autoPort = int.fromEnvironment('GUOSH_PORT', defaultValue: 22);
 const _autoUser = String.fromEnvironment('GUOSH_USER');
 const _autoPass = String.fromEnvironment('GUOSH_PASS');
+const _autoCmd = String.fromEnvironment('GUOSH_CMD');
 
 class GuoSSHellApp extends StatelessWidget {
   const GuoSSHellApp({super.key});
@@ -34,6 +35,7 @@ class GuoSSHellApp extends StatelessWidget {
         autoPort: _autoPort,
         autoUsername: _autoUser.isEmpty ? null : _autoUser,
         autoPassword: _autoPass.isEmpty ? null : _autoPass,
+        autoCommand: _autoCmd.isEmpty ? null : _autoCmd,
       ),
     );
   }

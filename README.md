@@ -60,7 +60,8 @@ rinf gen                      # 改过 native/hub 的信号结构后要重跑
 flutter run -d <模拟器id> \
   --dart-define=GUOSH_HOST=127.0.0.1 --dart-define=GUOSH_PORT=2222 \
   --dart-define=GUOSH_USER=probe --dart-define=GUOSH_PASS=probe
-# 不带 GUOSH_* 时是正常的连接表单
+# 不带 GUOSH_* 时是正常的连接表单；
+# GUOSH_CMD=top 可选——exec 模式（连上直接执行命令，M1 帧率实测用，无需键盘）。
 ```
 
 M0b 的 Xcode 工程建法见 [`ios-host/README.md`](ios-host/README.md)。

@@ -22,7 +22,8 @@ use rshell_session::{
 
 use crate::frame_codec::pack_runs;
 use crate::signals::{
-    ConnectRequest, DisconnectRequest, FrameUpdate, ResizeRequest, SessionState, SessionStatus,
+    ConnectRequest, DisconnectRequest, FrameUpdate, PerfStats, ResizeRequest, SessionState,
+    SessionStatus,
 };
 
 const NO_CURSOR: i32 = -1;
@@ -89,7 +90,8 @@ async fn run_session(
     request: ConnectRequest,
     pending_size: Option<TerminalSize>,
     mut commands: UnboundedReceiver<SessionCommand>,
-) {    let target = format!("{}:{}", request.host, request.port);
+) {
+    let target = format!("{}:{}", request.host, request.port);
     send_status(SessionState::Connecting, target.clone());
 
     let mut profile = ConnectionProfile::new("guosh", &request.host);
@@ -98,21 +100,29 @@ async fn run_session(
     profile.username = request.username.clone();
     profile.transport = TransportKind::NativeSsh;
     profile.authentication = AuthenticationKind::Password;
-
-    // 密码在这里包成 SecretString（PLAN.md §2.2：secret 不可序列化，协议层手写转换）。
-    let auth = match AuthPlan::from_secret(
-        &profile,
-        Some(SecretString::from(request.password.clone())),
-    ) {
-        Ok(auth) => auth,
-        Err(error) => {
-            send_status(SessionState::Failed, format!("AuthPlan: {error:?}"));
-            return;
-        }
+    // 非空命令 = exec 模式：PTY 照开，但远端直接执行该命令而不是 shell
+    //（上游 configure_channel 的行为）。M1 帧率实测（top/htop）靠它。
+    profile.remote_command = if request.command.is_empty() {
+        None
+    } else {
+        Some(request.command.clone())
     };
 
+    // 密码在这里包成 SecretString（PLAN.md §2.2：secret 不可序列化，协议层手写转换）。
+    let auth =
+        match AuthPlan::from_secret(&profile, Some(SecretString::from(request.password.clone()))) {
+            Ok(auth) => auth,
+            Err(error) => {
+                send_status(SessionState::Failed, format!("AuthPlan: {error:?}"));
+                return;
+            }
+        };
+
     let Some(known_hosts_path) = known_hosts_path() else {
-        send_status(SessionState::Failed, "no writable HOME directory".to_owned());
+        send_status(
+            SessionState::Failed,
+            "no writable HOME directory".to_owned(),
+        );
         return;
     };
     let verifier = KnownHostsVerifier::new(&known_hosts_path);
@@ -145,16 +155,24 @@ async fn run_session(
     let mut transport = match NativeSshTransport::new(profile, auth, verifier) {
         Ok(transport) => transport,
         Err(error) => {
-            send_status(SessionState::Failed, format!("NativeSshTransport: {error:?}"));
+            send_status(
+                SessionState::Failed,
+                format!("NativeSshTransport: {error:?}"),
+            );
             responder.abort();
             return;
         }
     };
-    if let Err(error) = transport.connect(&TransportRequest::new(size), broker).await {        debug_print!("[session] connect failed: {error:?}");
+    if let Err(error) = transport
+        .connect(&TransportRequest::new(size), broker)
+        .await
+    {
+        debug_print!("[session] connect failed: {error:?}");
         send_status(SessionState::Failed, format!("connect: {error:?}"));
         responder.abort();
         return;
-    }    debug_print!("[session] connected, starting engine loop");
+    }
+    debug_print!("[session] connected, starting engine loop");
     send_status(SessionState::Connected, target);
 
     let term_profile: ResolvedTerminalProfile =
@@ -171,10 +189,14 @@ async fn run_session(
         top_stable_row: i64::MAX, // 永远看最底部（活动区），与 bench/探针一致
         rows: size.rows,
     };
+    let mut stats = PerfWindow::new();
 
     // 连接建立即送第一帧（欢迎横幅可能已经进了引擎）。
     if let Ok(frame) = engine.render(viewport, None) {
-        send_frame(&frame);
+        send_frame(&frame, &mut stats, 0);
+    }
+    if let Some(perf) = stats.maybe_report() {
+        perf.send_signal_to_dart();
     }
 
     loop {
@@ -189,8 +211,15 @@ async fn run_session(
                                 let _ = transport.write(&delta.outbound).await;
                             }
                             if delta.dirty {
+                                let render_start = std::time::Instant::now();
                                 match engine.render(viewport, None) {
-                                    Ok(frame) => send_frame(&frame),
+                                    Ok(frame) => {
+                                        let render_us = micros_since(render_start);
+                                        send_frame(&frame, &mut stats, render_us);
+                                        if let Some(perf) = stats.maybe_report() {
+                                            perf.send_signal_to_dart();
+                                        }
+                                    }
                                     Err(error) => {
                                         send_status(SessionState::Failed, format!("render: {error:?}"));
                                         break;
@@ -236,8 +265,10 @@ async fn run_session(
                         // window-change 失败不立刻判死；远端布局暂旧，后续 resize 可再试。
                         rinf::debug_print!("window-change failed: {error:?}");
                     }
+                    let render_start = std::time::Instant::now();
                     if let Ok(frame) = engine.render(viewport, None) {
-                        send_frame(&frame);
+                        let render_us = micros_since(render_start);
+                        send_frame(&frame, &mut stats, render_us);
                     }
                 }
                 Some(SessionCommand::Disconnect) | None => {
@@ -256,7 +287,72 @@ fn send_status(state: SessionState, detail: String) {
     SessionStatus { state, detail }.send_signal_to_dart();
 }
 
-fn send_frame(frame: &RenderFrame) {
+/// 一个统计窗口（5 秒）内的帧开销累计 + 会话帧序号。
+struct PerfWindow {
+    window_start: std::time::Instant,
+    seq: u32,
+    frames: u32,
+    render_us_total: u64,
+    render_us_max: u32,
+    pack_us_total: u64,
+    pack_us_max: u32,
+    bytes_total: u64,
+}
+
+impl PerfWindow {
+    fn new() -> Self {
+        Self {
+            window_start: std::time::Instant::now(),
+            seq: 0,
+            frames: 0,
+            render_us_total: 0,
+            render_us_max: 0,
+            pack_us_total: 0,
+            pack_us_max: 0,
+            bytes_total: 0,
+        }
+    }
+
+    fn record(&mut self, render_us: u32, pack_us: u32, bytes: usize) -> u32 {
+        self.seq = self.seq.wrapping_add(1);
+        self.frames += 1;
+        self.render_us_total += u64::from(render_us);
+        self.render_us_max = self.render_us_max.max(render_us);
+        self.pack_us_total += u64::from(pack_us);
+        self.pack_us_max = self.pack_us_max.max(pack_us);
+        self.bytes_total += bytes as u64;
+        self.seq
+    }
+
+    /// 满 5 秒发一条汇总并重开窗口。
+    fn maybe_report(&mut self) -> Option<PerfStats> {
+        let elapsed = self.window_start.elapsed();
+        if elapsed < std::time::Duration::from_secs(5) || self.frames == 0 {
+            return None;
+        }
+        let frames = self.frames;
+        let stats = PerfStats {
+            frames,
+            window_ms: u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX),
+            render_us_avg: (self.render_us_total / u64::from(frames)) as u32,
+            render_us_max: self.render_us_max,
+            pack_us_avg: (self.pack_us_total / u64::from(frames)) as u32,
+            pack_us_max: self.pack_us_max,
+            bytes_avg: (self.bytes_total / u64::from(frames)) as u32,
+        };
+        *self = Self {
+            seq: self.seq,
+            ..Self::new()
+        };
+        Some(stats)
+    }
+}
+
+fn micros_since(start: std::time::Instant) -> u32 {
+    u32::try_from(start.elapsed().as_micros()).unwrap_or(u32::MAX)
+}
+
+fn send_frame(frame: &RenderFrame, stats: &mut PerfWindow, render_us: u32) {
     let (cursor_col, cursor_row) = match &frame.cursor {
         Some(cursor) => {
             let row = cursor.position.stable_row - frame.viewport_top;
@@ -269,14 +365,18 @@ fn send_frame(frame: &RenderFrame) {
         }
         None => (NO_CURSOR, NO_CURSOR),
     };
+    let pack_start = std::time::Instant::now();
+    let binary = pack_runs(frame);
+    let pack_us = micros_since(pack_start);
+    let seq = stats.record(render_us, pack_us, binary.len());
     FrameUpdate {
         cols: frame.size.cols,
         rows: frame.size.rows,
-        generation: frame.generation,
+        seq,
         cursor_col,
         cursor_row,
     }
-    .send_signal_to_dart(pack_runs(frame));
+    .send_signal_to_dart(binary);
 }
 
 /// known_hosts 落在 App 沙箱内（iOS 的 `HOME` 就是容器主目录）。

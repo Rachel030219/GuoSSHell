@@ -47,7 +47,7 @@ serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 # rinf v8 的默认序列化格式，用它量边界上的真实字节数与编码耗时。
 bincode = { version = "2", features = ["serde"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net", "process", "io-util"] }
 
 # 只给 examples（m0_loopback / demo_server）用，不进 App 依赖图。
 [dev-dependencies]

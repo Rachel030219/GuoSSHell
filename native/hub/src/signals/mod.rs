@@ -21,6 +21,9 @@ pub struct ConnectRequest {
     pub port: u16,
     pub username: String,
     pub password: String,
+    /// 非空 = exec 模式：连接后在远端直接执行该命令（如 `top`），不进 shell。
+    /// M1 的帧率实测靠它，不需要输入能力。
+    pub command: String,
     /// 首次几何。度量的唯一权威是 Flutter（PLAN.md §8）：
     /// 它量完格子后随连接请求一起带来。
     pub cols: u16,
@@ -66,8 +69,25 @@ pub struct SessionStatus {
 pub struct FrameUpdate {
     pub cols: u16,
     pub rows: u16,
-    pub generation: u64,
+    /// 本会话内单调递增的帧序号。Dart 侧用它数**丢帧**：
+    /// 收到的 seq 跳变 = 中间有帧没送达（验收：表现为晚一帧，不是花屏）。
+    pub seq: u32,
     /// 光标的视口内坐标（列, 行）。`-1` 表示不可见（隐藏或滚出视口）。
     pub cursor_col: i32,
     pub cursor_row: i32,
+}
+
+/// 每 5 秒一条的性能汇总（M1 帧率验收的数字来源）。
+/// 单帧预算 16.67 ms（PLAN §4）：render_us + pack_us 的 max 是 Rust 侧的真实开销。
+#[derive(Serialize, RustSignal)]
+pub struct PerfStats {
+    /// 统计窗口内实际打包发出的帧数。fps = frames / window_ms * 1000。
+    pub frames: u32,
+    pub window_ms: u32,
+    pub render_us_avg: u32,
+    pub render_us_max: u32,
+    pub pack_us_avg: u32,
+    pub pack_us_max: u32,
+    /// 每帧压缩字节数的平均值（典型 5.8–7.2 KB，TUI 满屏最坏 61 KB）。
+    pub bytes_avg: u32,
 }

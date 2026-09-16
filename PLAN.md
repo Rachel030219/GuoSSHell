@@ -672,7 +672,12 @@ M0b 的 Xcode 工程建法见 `ios-host/README.md`。
       16 色 / truecolor / 反显 / 粗体 / CJK 2 列 / emoji 全部正确 →
       `RESIZE-ACK cols=98 rows=72`（旋转尺寸闭环）→ 流式日志滚动 → 光标块 →
       fps 计数器工作
-- [ ] 真机内网 SSH 复验（用户执行）+ 连续 `top`/`htop` 下的帧率达标确认
+- [ ] 真机内网 SSH 复验（用户执行，✅ 已完成）+ 连续 `top`/`htop` 下的帧率达标确认：
+      **exec 模式已就绪**——连接表单新增「命令（可选）」字段（或 `GUOSH_CMD` dart-define），
+      填 `top`/`htop` 连接即执行，无需键盘（上游 `configure_channel`：`remote_command`
+      非空走 `channel.exec`，PTY 照开）。Rust 侧每 5s 发 `PerfStats`（render/pack
+      avg·max、帧均字节），Dart 侧按 `FrameUpdate.seq` 跳变计丢帧；实测注意
+      debug 构建的 Rust 开销高一个量级，验收以 release/profile 为准
 - [ ] terminal_view fork（字形缓存 / Picture 重放 / 选择 / IME），见 §6.1 的 M1 决定
 - [ ] 子项 M1-b：iPhone 适配
 - [ ] M2 / M3 / M4 / M5

@@ -181,6 +181,10 @@ mod tests {
             }
         }
         assert!(saw_red, "red run (Ansi(1)) must appear on row 0");
-        assert_eq!(cursor, packed.len(), "decoder must consume exactly all bytes");
+        assert_eq!(
+            cursor,
+            packed.len(),
+            "decoder must consume exactly all bytes"
+        );
     }
 }

@@ -19,6 +19,7 @@ class TerminalPage extends StatefulWidget {
   final int? autoPort;
   final String? autoUsername;
   final String? autoPassword;
+  final String? autoCommand;
 
   const TerminalPage({
     super.key,
@@ -26,6 +27,7 @@ class TerminalPage extends StatefulWidget {
     this.autoPort,
     this.autoUsername,
     this.autoPassword,
+    this.autoCommand,
   });
 
   @override
@@ -39,14 +41,21 @@ class _TerminalPageState extends State<TerminalPage> {
   final _port = TextEditingController(text: '22');
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _command = TextEditingController();
 
   StreamSubscription? _statusSub;
   StreamSubscription? _frameSub;
+  StreamSubscription? _perfSub;
 
   _Phase _phase = _Phase.form;
   SessionState? _state;
   String _detail = '';
   TerminalFrame? _frame;
+
+  // 帧序号与丢帧（FrameUpdate.seq 跳变 = 有帧没送达）。
+  int? _lastSeq;
+  int _dropped = 0;
+  PerfStats? _perf;
 
   // 度量与几何（度量的权威在 Flutter，PLAN.md §8）。
   double? _cellWidth;
@@ -63,6 +72,7 @@ class _TerminalPageState extends State<TerminalPage> {
     super.initState();
     _statusSub = SessionStatus.rustSignalStream.listen(_onStatus);
     _frameSub = FrameUpdate.rustSignalStream.listen(_onFrame);
+    _perfSub = PerfStats.rustSignalStream.listen(_onPerf);
     if (widget.autoHost != null && widget.autoHost!.isNotEmpty) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         _sendConnect(
@@ -70,6 +80,7 @@ class _TerminalPageState extends State<TerminalPage> {
           port: widget.autoPort ?? 22,
           username: widget.autoUsername ?? '',
           password: widget.autoPassword ?? '',
+          command: widget.autoCommand ?? '',
         );
       });
     }
@@ -79,10 +90,12 @@ class _TerminalPageState extends State<TerminalPage> {
   void dispose() {
     _statusSub?.cancel();
     _frameSub?.cancel();
+    _perfSub?.cancel();
     _host.dispose();
     _port.dispose();
     _username.dispose();
     _password.dispose();
+    _command.dispose();
     super.dispose();
   }
 
@@ -97,6 +110,11 @@ class _TerminalPageState extends State<TerminalPage> {
   void _onFrame(RustSignalPack<FrameUpdate> pack) {
     if (!mounted) return;
     final msg = pack.message;
+    var dropped = _dropped;
+    final lastSeq = _lastSeq;
+    if (lastSeq != null && msg.seq > lastSeq + 1) {
+      dropped += msg.seq - lastSeq - 1;
+    }
     try {
       final frame = decodeFrame(
         pack.binary,
@@ -107,10 +125,16 @@ class _TerminalPageState extends State<TerminalPage> {
       );
       setState(() {
         _frame = frame;
+        _dropped = dropped;
+        _lastSeq = msg.seq;
         _frameCount++;
       });
     } on FormatException catch (error) {
-      setState(() => _detail = 'frame decode: $error');
+      setState(() {
+        _dropped = dropped;
+        _lastSeq = msg.seq;
+        _detail = 'frame decode: $error';
+      });
     }
     final now = DateTime.now();
     if (now.difference(_fpsStamp).inMilliseconds >= 1000) {
@@ -122,6 +146,11 @@ class _TerminalPageState extends State<TerminalPage> {
     }
   }
 
+  void _onPerf(RustSignalPack<PerfStats> pack) {
+    if (!mounted) return;
+    setState(() => _perf = pack.message);
+  }
+
   void _connect() {
     FocusManager.instance.primaryFocus?.unfocus();
     _sendConnect(
@@ -129,6 +158,7 @@ class _TerminalPageState extends State<TerminalPage> {
       port: int.tryParse(_port.text.trim()) ?? 22,
       username: _username.text,
       password: _password.text,
+      command: _command.text.trim(),
     );
   }
 
@@ -137,18 +167,23 @@ class _TerminalPageState extends State<TerminalPage> {
     required int port,
     required String username,
     required String password,
+    required String command,
   }) {
     setState(() {
       _phase = _Phase.session;
       _state = SessionState.connecting;
       _detail = '$host:$port';
       _frame = null;
+      _lastSeq = null;
+      _dropped = 0;
+      _perf = null;
     });
     ConnectRequest(
       host: host,
       port: port,
       username: username,
       password: password,
+      command: command,
       cols: _sentCols,
       rows: _sentRows,
       pixelWidth: _sentPw,
@@ -163,6 +198,9 @@ class _TerminalPageState extends State<TerminalPage> {
       _phase = _Phase.form;
       _frame = null;
       _state = null;
+      _lastSeq = null;
+      _dropped = 0;
+      _perf = null;
     });
   }
 
@@ -264,6 +302,15 @@ class _TerminalPageState extends State<TerminalPage> {
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _command,
+            decoration: const InputDecoration(
+              labelText: '命令（可选）',
+              hintText: '填了就连上直接执行，如 top；留空进 shell',
+              border: OutlineInputBorder(),
+            ),
+          ),
           const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: _connect,
@@ -341,13 +388,10 @@ class _TerminalPageState extends State<TerminalPage> {
             Positioned(
               right: 10,
               bottom: 8,
-              child: Text(
-                '$_fps fps',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 11,
-                  fontFamily: 'Menlo',
-                ),
+              child: _PerfOverlay(
+                fps: _fps,
+                dropped: _dropped,
+                perf: _perf,
               ),
             ),
             Positioned(
@@ -362,6 +406,42 @@ class _TerminalPageState extends State<TerminalPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PerfOverlay extends StatelessWidget {
+  final int fps;
+  final int dropped;
+  final PerfStats? perf;
+
+  const _PerfOverlay({required this.fps, required this.dropped, this.perf});
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      color: Color(0x59FFFFFF),
+      fontSize: 11,
+      fontFamily: 'Menlo',
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$fps fps', style: style),
+        if (dropped > 0) Text('丢帧 $dropped', style: style),
+        if (perf != null) ...[
+          Text(
+            'pack ${perf!.packUsAvg}/${perf!.packUsMax}μs',
+            style: style,
+          ),
+          Text(
+            'render ${perf!.renderUsAvg}/${perf!.renderUsMax}μs',
+            style: style,
+          ),
+          Text('帧均 ${perf!.bytesAvg ~/ 1024}KB', style: style),
+        ],
+      ],
     );
   }
 }
