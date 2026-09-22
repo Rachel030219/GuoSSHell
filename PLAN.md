@@ -341,10 +341,11 @@ $ echo M0-ECHO
 验收标准按「iPad 版二进制在 iOS 运行时上跑通」来定，不按「macOS 上跑通」来定。
 两者都不覆盖：jetsam 内存上限、真实触摸/IME 时序、App 审核沙箱限制——那些留给 M4 与真机。
 
-**子项 M1-b：iPhone 适配（iPad 通了之后再做）。** 小屏 + 软键盘是两套独立问题，单独立项。
-本机已有两台 iPhone（13 mini / 12 mini）可用；先用模拟器，真机可选。
+**子项 M1-b（2026-09-22 缩减为小屏验收，并入 M2a）。** iPhone（6.1 寸）的连接、渲染、
+输入体验已随 M2 实机验收；软键盘/IME 的专项验收本来就在 M2 清单内。剩下的只有
+**小屏布局验收**：13 mini / 12 mini 到位后过一遍帧画布、键位条换行、安全区、旋转。
 
-### M2 — 输入闭环 —— 🚧 进行中（2026-09-16 开工）
+### M2 — 输入闭环 —— ✅ 已完成（2026-09-22 验收）
 
 **前置：fork `terminal_view`（决策记录见 §6.1 末尾的 M2 fork 决定块）。**
 
@@ -368,6 +369,8 @@ m1bar 60fps 不回退、M1 画面能力持平。
 （`encode_mouse`，htop 等程序的点击）。三者共享「帧模型上的选区/命中测试」地基——
 这是 M1 勘察标的最大未验证块。验收：选词→复制到剪贴板；粘贴进 `vim`；
 `htop` 里点击列头排序、点选进程。
+另含 M1-b 缩减而来的**小屏验收**：13 mini / 12 mini 上过一遍布局
+（帧画布、键位条换行、安全区、旋转）。
 
 ### M3 — 连接管理与凭证
 
@@ -713,10 +716,20 @@ flutter/Cargokit 全权负责。M0b 的 Xcode 工程建法在 git 历史的
       avg·max、帧均字节）+ Dart 按 `FrameUpdate.seq` 跳变计丢帧。
       模拟器实测：600 帧 60.0Hz、**0 丢帧**、debug 构建单帧 render+pack ~2–5ms
       （预算 16.67ms，release 更低）。
-- [ ] terminal_view fork（字形缓存 / Picture 重放 / 选择 / IME），见 §6.1 的 M1 决定
-      ——M1-b（iPhone 软键盘/小屏）之前做
-- [ ] 子项 M1-b：iPhone 适配
-- [ ] M2 / M3 / M4 / M5
+- [x] terminal_view fork（字形缓存 / Picture 重放 / 选择 / IME）——随 M2 完成（b75d7bb）
+
+**M2 —— 输入闭环 —— ✅ 已完成（2026-09-22）**
+
+- [x] fork 方案 A + 帧适配器 + 双排键位条（b75d7bb）
+- [x] 验收通过项：vim 编辑保存、IME preedit 不外发、m1bar 60fps 不回退、
+      Ctrl+C 精确 ETX、软键盘 Enter 单发；iPhone（6.1 寸）实机连接与体验 OK
+- [x] 实机连接修复：known_hosts 路径目录残留清理
+      （followup「实机连接失败-Platform」已解决）
+- [x] iOS 软键盘 Enter 双发：fork 血统 bug（iOS 上一次 Return 走
+      performAction 与 "\n" 插入两条路），fork 侧去重修复，
+      terminal_view ref 7f89795 → 21d04c2
+- [x] M1-b 缩减为小屏布局验收，并入 M2a
+- [ ] M2a / M3 / M4 / M5
 
 **关于提交**
 

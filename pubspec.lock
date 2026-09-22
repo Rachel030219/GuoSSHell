@@ -228,8 +228,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "7f89795"
-      resolved-ref: "7f897950064441aaa6fb43caff04bd93a0eb0f22"
+      ref: "21d04c20197c6058717b3704454d229b388f2257"
+      resolved-ref: "21d04c20197c6058717b3704454d229b388f2257"
       url: "https://github.com/Rachel030219/terminal_view.git"
     source: git
     version: "0.2.1"
@@ -261,10 +261,10 @@ packages:
     dependency: transitive
     description:
       name: vector_math
-      sha256: f36f9f3be64c6198714492bb455c11056e33e2f85d9a0b676a48301e44fdcf47
+      sha256: "92b9910f66ed1057fd4da7b040ae7c74cafacf885bdc81be496928d5049b032d"
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "2.4.2"
+    version: "2.4.3"
   vm_service:
     dependency: transitive
     description:
