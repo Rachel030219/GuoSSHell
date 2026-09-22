@@ -36,6 +36,14 @@ dependencies:
   cupertino_icons: ^1.0.8
   meta: ^1.19.0
   tuple: ^2.0.2
+
+  # 终端渲染层：我们的 fork（TerminalSurface 接口收窄，方案 A）。
+  # 上游 Termphin/terminal_view v0.2.0 的直接后裔；ref 由 PLAN §6.1 的
+  # fork 决定约束：升级 = 换 ref + 跑它的测试 + 我们的回归。
+  terminal_view:
+    git:
+      url: https://github.com/Rachel030219/terminal_view.git
+      ref: "7f89795"
   rinf: ^8.10.1
 
 dev_dependencies:

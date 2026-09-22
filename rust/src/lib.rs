@@ -335,3 +335,209 @@ fn escape(value: &str) -> String {
     out.push('"');
     out
 }
+
+/// M2 诊断（第二步）：在真机上把主机密钥管线**完整走两遍**——
+/// ① 假主机（基线）；② 真实主机/端口。都写到一次性探针文件
+/// （不碰真实 known_hosts），is_known → 交互确认 → 落盘全轮。
+/// 上游把 HostKeyError 映射成 `Platform` 时丢掉了具体步骤，这里原样带回。
+pub async fn diagnose_host_key_pipeline(
+    base_dir: &str,
+    real_host: &str,
+    real_port: u16,
+) -> String {
+    use rshell_core::{HostKeyDecision, InteractionResponse};
+    use rshell_session::{KnownHostsVerifier, interaction_channel};
+
+    let Ok(dummy) = russh::keys::parse_public_key_base64(
+        "AAAAC3NzaC1lZDI1NTE5AAAAILagOJFgwaMNhBWQINinKOXmqS4Gh5NgxgriXwdOoINJ",
+    ) else {
+        return "diagnose: internal (dummy key unavailable)".to_owned();
+    };
+
+    // ① 基线：假主机 + 独立探针文件。
+    let probe_path = format!("{base_dir}/diagnose-known_hosts");
+    let _ = std::fs::remove_file(&probe_path);
+    let baseline = verify_round(
+        &KnownHostsVerifier::new(&probe_path),
+        "diagnose.invalid",
+        22,
+        &dummy,
+    )
+    .await;
+    let _ = std::fs::remove_file(&probe_path);
+
+    // ② 真实主机/端口 + 独立探针文件：隔离「真实主机名/端口」变量。
+    let real_probe_path = format!("{base_dir}/diagnose-known_hosts-real");
+    let _ = std::fs::remove_file(&real_probe_path);
+    let real = verify_round(
+        &KnownHostsVerifier::new(&real_probe_path),
+        real_host,
+        real_port,
+        &dummy,
+    )
+    .await;
+    let _ = std::fs::remove_file(&real_probe_path);
+
+    format!("① 基线(假主机): {baseline}；② 真实主机({real_host}:{real_port}): {real}")
+}
+
+async fn verify_round(
+    verifier: &KnownHostsVerifier,
+    host: &str,
+    port: u16,
+    key: &russh::keys::PublicKey,
+) -> String {
+    let (broker, mut interactions) = interaction_channel();
+    let responder = {
+        let broker = broker.clone();
+        tokio::spawn(async move {
+            while let Some((id, _prompt)) = interactions.recv().await {
+                let _ = broker.respond(
+                    id,
+                    InteractionResponse::HostKey(HostKeyDecision::AcceptAndStore),
+                );
+            }
+        })
+    };
+    let outcome = verifier.verify(host, port, key, &broker).await;
+    responder.abort();
+    match outcome {
+        Ok(()) => "OK".to_owned(),
+        Err(error) => format!("FAILED: {error:?}"),
+    }
+}
+
+/// M2 诊断（第三步）：对真实服务器做一次**裸 russh 握手**，握手里的
+/// check_server_key 调用与 App 完全相同的 verifier + 交互回路，
+/// 但把 `HostKeyError` 原文（含具体 Storage/Interaction 步骤）逐条记录。
+/// 写 known_hosts 用一次性文件，不污染真实条目。
+pub async fn diagnose_real_handshake(
+    host: &str,
+    port: u16,
+    throwaway_known_hosts: &str,
+) -> String {
+    use rshell_core::{HostKeyDecision, InteractionRequest, InteractionResponse};
+    use rshell_session::{
+        InteractionBroker, KnownHostsVerifier, interaction_channel,
+    };
+    use std::sync::{Arc, Mutex};
+
+    struct DiagHandler {
+        verifier: KnownHostsVerifier,
+        host: String,
+        port: u16,
+        broker: InteractionBroker,
+        report: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl russh::client::Handler for DiagHandler {
+        type Error = russh::Error;
+
+        async fn check_server_key(
+            &mut self,
+            key: &russh::keys::PublicKey,
+        ) -> Result<bool, Self::Error> {
+            let push = |entry: String| {
+                self.report
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(entry);
+            };
+            push(format!(
+                "server key presented: {} {}",
+                key.algorithm(),
+                key.fingerprint(russh::keys::HashAlg::Sha256)
+            ));
+            match self
+                .verifier
+                .verify(&self.host, self.port, key, &self.broker)
+                .await
+            {
+                Ok(()) => {
+                    push("verify: OK".to_owned());
+                    Ok(true)
+                }
+                Err(error) => {
+                    push(format!("verify FAILED: {error:?}"));
+                    Err(russh::Error::UnknownKey)
+                }
+            }
+        }
+    }
+
+    let _ = std::fs::remove_file(throwaway_known_hosts);
+    let report: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let verifier = KnownHostsVerifier::new(throwaway_known_hosts);
+    let (broker, mut interactions) = interaction_channel();
+    let responder = {
+        let broker = broker.clone();
+        let report = Arc::clone(&report);
+        tokio::spawn(async move {
+            while let Some((id, prompt)) = interactions.recv().await {
+                let response = match prompt {
+                    InteractionRequest::HostKey(_) => {
+                        InteractionResponse::HostKey(HostKeyDecision::AcceptAndStore)
+                    }
+                    other => {
+                        report
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .push(format!("unexpected interaction: {other:?}"));
+                        InteractionResponse::Cancel
+                    }
+                };
+                let _ = broker.respond(id, response);
+            }
+        })
+    };
+
+    let handler = DiagHandler {
+        verifier,
+        host: host.to_owned(),
+        port,
+        broker,
+        report: Arc::clone(&report),
+    };
+    let config = Arc::new(russh::client::Config {
+        inactivity_timeout: Some(std::time::Duration::from_secs(15)),
+        ..Default::default()
+    });
+
+    match tokio::time::timeout(std::time::Duration::from_secs(30), async move {
+        let stream = tokio::net::TcpStream::connect((host, port)).await?;
+        russh::client::connect_stream(config, stream, handler).await
+    })
+    .await
+    {
+        Ok(Ok(handle)) => {
+            report
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push("handshake: OK".to_owned());
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "diagnose", "en")
+                .await;
+        }
+        Ok(Err(error)) => {
+            report
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(format!("handshake FAILED: {error:?}"));
+        }
+        Err(_) => {
+            report
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push("handshake TIMEOUT (30s)".to_owned());
+        }
+    }
+    responder.abort();
+    let _ = std::fs::remove_file(throwaway_known_hosts);
+
+    let entries = report
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .join(" | ");
+    format!("diagnose-real: {entries}")
+}

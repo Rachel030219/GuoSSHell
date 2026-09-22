@@ -288,7 +288,9 @@ async fn main() {
 /// 密钥文件跨重启**保留**：App 沙箱里的 known_hosts 是 TOFU 落盘的，
 /// 服务器每次换密钥会触发 HostKeyChanged（那是 M3 才处理的场景）。
 fn demo_host_key() -> russh::keys::PrivateKey {
-    let path = std::env::temp_dir().join("guosh-demo-server-hostkey");
+    // /tmp 会被 macOS 定期清理，密钥一换 App 里的 TOFU entry 就失配
+    // （HostKeyChanged）。放到用户主目录下才能长期稳定。
+    let path = dirs_demo_host_key();
     if path.exists() {
         return russh::keys::load_secret_key(&path, None).expect("load existing host key");
     }
@@ -301,4 +303,12 @@ fn demo_host_key() -> russh::keys::PrivateKey {
     assert!(status.success(), "ssh-keygen failed");
 
     russh::keys::load_secret_key(&path, None).expect("load generated host key")
+}
+
+/// 密钥的持久位置：`~/.guosh-demo/hostkey`（/tmp 会被系统清理）。
+fn dirs_demo_host_key() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+    let dir = std::path::Path::new(&home).join(".guosh-demo");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("hostkey")
 }
