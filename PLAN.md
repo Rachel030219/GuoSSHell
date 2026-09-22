@@ -344,13 +344,30 @@ $ echo M0-ECHO
 **子项 M1-b：iPhone 适配（iPad 通了之后再做）。** 小屏 + 软键盘是两套独立问题，单独立项。
 本机已有两台 iPhone（13 mini / 12 mini）可用；先用模拟器，真机可选。
 
-### M2 — 输入闭环
+### M2 — 输入闭环 —— 🚧 进行中（2026-09-16 开工）
 
-Flutter 的输入 → `TerminalInput::{CommittedText, Key{code, modifiers}}` →
-Rust `encode_input()`（alacritty 键编码，含 Kitty / CSI-u 协商）→ `transport.write()`。
+**前置：fork `terminal_view`（决策记录见 §6.1 末尾的 M2 fork 决定块）。**
+
+- Flutter 的输入 → `TerminalInput::{CommittedText, Key{code, modifiers}}` →
+  Rust `encode_input()`（alacritty 键编码，含 Kitty / CSI-u 协商）→ `transport.write()`。
+- fork 改造（方案 A，勘察见 `docs/survey-terminal-view-2026-09-16.md`）：
+  render/widget 依赖的 `Terminal` 收窄成接口；painter/缓存零改动；
+  App 侧写帧适配器（帧→BufferLine 行池，内容比对复用以保住行 Picture 重放）。
+- 键位条：双排固定布局（修饰键挂住一次、长按锁定，Termux 同款；
+  功能键即点即发）；用户自定义排布留给设置体系。
 
 **验收**：iPad 上能跑通 `vim` 并保存；`Ctrl+C` 精确发一个 `ETX`；
-中文 IME 的 **preedit 绝不外发**；`Ctrl`/`Esc`/`Tab`/方向键在软键盘上可达。
+中文 IME 的 **preedit 绝不外发**；`Ctrl`/`Esc`/`Tab`/方向键在软键盘上可达；
+m1bar 60fps 不回退、M1 画面能力持平。
+**范围排除**：滚动锁底部（scrollback 留 M4）；无选区/粘贴/鼠标（M2a）；
+无字体/主题的用户自定义（M3+ 设置体系）。
+
+### M2a — 指针交互（M2 与 M3 之间）
+
+选区（长按/拖动/按词）+ 复制/粘贴（bracketed paste 由引擎协商）+ 鼠标转发
+（`encode_mouse`，htop 等程序的点击）。三者共享「帧模型上的选区/命中测试」地基——
+这是 M1 勘察标的最大未验证块。验收：选词→复制到剪贴板；粘贴进 `vim`；
+`htop` 里点击列头排序、点选进程。
 
 ### M3 — 连接管理与凭证
 
@@ -427,9 +444,17 @@ Android 的 Flutter 侧产物在 M1 之后基本是免费的。
 （`lib/src/terminal/terminal_painter.dart`）把 run 压缩帧画出来，理由：terminal_view 的
 render object 与它自己的 `Terminal` 缓冲类型耦合，换数据源必须 fork，是独立的一块工程；
 而 M1 的核心风险在「整条管线 + 帧率」，run 帧是纯展示数据、不含任何终端状态，自写
-painter 不违反铁律 4。**terminal_view fork 仍是既定方向**（字形缓存 / CharMetricsCache /
-不动行的 Picture 重放 / 选择手柄 / IME），排到 M1-b 之前做；到时把本 painter 的
-「按 run 起始列绝对定位 + 宽字符簇定位」语义原样搬过去。
+painter 不违反铁律 4。
+
+**M2 fork 决定（2026-09-16，/grill-me 定案）：**
+上游 `Termphin/terminal_view` @ v0.2.0，MIT；**GitHub fork + git 依赖**（与 Rust 上游
+对称，源码不进本仓库）；本地先 clone 改造、分 commit，remote URL 由用户后补。
+接缝用**方案 A**：render/widget 依赖的 `Terminal` 收窄成接口，painter 与行/段落缓存
+**零改动**，App 侧写帧适配器把解码后的帧**填进池化的真 BufferLine**（内容逐 run 比对、
+相同则复用对象且不碰 `version`——行 Picture 重放的命中条件）；包内 parser/buffer
+**留而不用**（不引用即不进 AOT 产物）。适配器放 App 侧（与 rinf 耦合属业务），
+fork 保持通用。滚动锁底部，scrollback 留 M4；选区/粘贴/鼠标留 M2a。
+勘察全文：`docs/survey-terminal-view-2026-09-16.md`。
 
 ### 6.2 明确不用
 
