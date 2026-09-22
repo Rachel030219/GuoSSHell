@@ -506,7 +506,22 @@ fn known_hosts_path() -> Option<String> {
     ];
     for candidate in candidates.into_iter().flatten() {
         if std::fs::create_dir_all(&candidate).is_ok() {
-            return Some(candidate.join("known_hosts").display().to_string());
+            let path = candidate.join("known_hosts");
+            // 早期探针 bug 曾把这个文件路径当目录建出来（create_dir_all 当父目录
+            // 处理）。is_known 见「路径存在但不是文件」就报 Verification → 上游
+            // 折叠成 Platform，之后每次连接都死在这。路径上只可能是那次 bug 留下
+            // 的目录，安全移除；若是文件则不动。
+            if path.is_dir() {
+                match std::fs::remove_dir_all(&path) {
+                    Ok(()) => rinf::debug_print!(
+                        "[session] removed stale known_hosts directory (legacy probe leftover)"
+                    ),
+                    Err(error) => rinf::debug_print!(
+                        "[session] stale known_hosts directory removal failed: {error:?}"
+                    ),
+                }
+            }
+            return Some(path.display().to_string());
         }
     }
     None
