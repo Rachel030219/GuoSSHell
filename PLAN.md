@@ -383,6 +383,32 @@ Rust 侧接口现成：`AuthPlan::from_profile(&profile, &vault)` + `CredentialV
 
 **⚠ 还债点**：M0 用的是 TOFU 自动接受，**必须在 M3 换成真实确认**。
 
+### M3a — 私钥认证与同步（M3 之后）
+
+**已定（2026-09-22 拍板）**：私钥 blob 跨设备同步的安全取舍**接受**，但必须做成**开关**：
+默认关闭；开关启用时明确告知「私钥将随 iCloud Keychain 上传同步」，用户同意后才写入
+synchronizable 条目。（iOS 硬规则：`kSecClassKey` 不参与 iCloud Keychain 同步，
+所以只能走 generic password 里的 blob。）
+
+- 本地私钥文件认证：russh 公钥路径 + 上游 `AuthPlan::from_profile` /
+  `ConnectionProfile.identity_file`，接口现成
+- 私钥入 Keychain：OpenSSH 私钥整体作为 generic password blob
+- 同步开关（上述 UX 约束）+ 首次开启时的确认 UI
+- 待查：上游 CredentialVault 的 apple 后端是否暴露 synchronizable 属性；
+  不行就在我们侧自实现该 trait（不动上游）
+
+### M3b — 硬件密钥（spike 与 M3 并行）
+
+**已定（2026-09-22 拍板）**：spike 并行做，正式立项等结论。
+
+- 前提事实：iOS 无通用 USB 访问、无系统 gpg-agent 可复用；受支持的路只有
+  CryptoTokenKit（iOS 16+ `TKSmartCard` + 外置 CCID 读卡器；GPG 卡即 OpenPGP 卡）
+  或厂商 SDK（YubiKit 等）
+- **Spike（1–2 天）**：`TKSmartCard` 枚举外置读卡器 + 对 OpenPGP 卡完成一次签名，
+  出可行性结论
+- 正式形态（spike 通过后立项）：Rust 实现 russh `Signer`（`authenticate_publickey_with`，
+  挂点现成），签名请求桥到 iOS 侧执行；PIN 交互走 `InteractionRequest`
+
 ### M4 — 产品化与合规
 
 - 多标签 / 分屏（`PaneTree` / `SplitAxis` / `WorkspaceState` / `UiCommand::Split` 都已在 Rust 侧）
@@ -729,7 +755,7 @@ flutter/Cargokit 全权负责。M0b 的 Xcode 工程建法在 git 历史的
       performAction 与 "\n" 插入两条路），fork 侧去重修复，
       terminal_view ref 7f89795 → 21d04c2
 - [x] M1-b 缩减为小屏布局验收，并入 M2a
-- [ ] M2a / M3 / M4 / M5
+- [ ] M2a / M3 / M3a / M3b(spike) / M4 / M5
 
 **关于提交**
 
