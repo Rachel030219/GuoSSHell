@@ -397,17 +397,64 @@ synchronizable 条目。（iOS 硬规则：`kSecClassKey` 不参与 iCloud Keych
 - 待查：上游 CredentialVault 的 apple 后端是否暴露 synchronizable 属性；
   不行就在我们侧自实现该 trait（不动上游）
 
-### M3b — 硬件密钥（spike 与 M3 并行）
+### M3b — 硬件密钥：OpenPGP 卡 Ed25519 —— 已立项（2026-09-23 拍板）
 
-**已定（2026-09-22 拍板）**：spike 并行做，正式立项等结论。
+**验证先行（不阻塞，不等 M3/M3a）**：macOS 上用现有 CanoKeys Canokey（认证槽
+Ed25519，已插本机）把「卡签名 → SSH 认证」全链路验通（抄 `openpgp-card-ssh-agent`
+的转换逻辑）；真机 iPhone 16（iOS 27）可验 NFC 卡槽。
 
-- 前提事实：iOS 无通用 USB 访问、无系统 gpg-agent 可复用；受支持的路只有
-  CryptoTokenKit（iOS 16+ `TKSmartCard` + 外置 CCID 读卡器；GPG 卡即 OpenPGP 卡）
-  或厂商 SDK（YubiKit 等）
-- **Spike（1–2 天）**：`TKSmartCard` 枚举外置读卡器 + 对 OpenPGP 卡完成一次签名，
-  出可行性结论
-- 正式形态（spike 通过后立项）：Rust 实现 russh `Signer`（`authenticate_publickey_with`，
-  挂点现成），签名请求桥到 iOS 侧执行；PIN 交互走 `InteractionRequest`
+**前置：M3a 完成**。先有文件私钥认证再上外置卡——两者走同一套上游认证机制，
+文件私钥先把路径验通（见 §5 M3a）。
+
+**调研结论（2026-09-23，证据见 `docs/survey-m3b-2026-09-23.md`）**：
+
+- 路线定案：**OpenPGP applet + ISO 7816 APDU**，不用 WebAuthn（→ M3d）、不用厂商
+  SDK、不做 PIV。现有 CanoKey 的 Ed25519 只能走这条路
+- 认证走**认证槽**：INTERNAL AUTHENTICATE（`00 88 00 00`）+ `VERIFY P2=82`
+  （OpenPGP 卡规范 7.2.13.1 明说为 SSH 设计；gpg-agent 同款路径）；每次认证 =
+  输 PIN + 按卡上按钮（CanoKey UIF 全 on）
+- Ed25519 送**原始消息**（SSH 会话 blob），卡返回 64 字节裸签名 → `ssh-ed25519`
+  直接可用，无 DigestInfo / mpint 转换
+- ⚠ russh `Signer` 返回 `to_sign 原文 + string(算法名) + string(签名)`，
+  **不是裸签名**（russh 源码 `client/encrypted.rs`；最容易做错）
+- 上游 rsHell **无 Signer 注入点**（`AuthPlan` 只有 Password/PublicKey/Agent/
+  KeyboardInteractive）→ 两条路：① **agent 伪装**：进程内 `ssh-agent-lib` +
+  `SSH_AUTH_SOCK` 走上游现成 Agent 认证（零上游改动，**先验证这条**）；
+  ② fork 上游加卡认证变体（§9.2.3，①走不通才做）
+- PIN 交互：复用 `InteractionRequest`（PrivateKeyPassphrase 变体），或 fork 时
+  加通用 PIN 变体
+
+**iOS 传输层**（复用 `card-backend` trait 自写 iOS 后端——iOS SDK 无
+PCSC.framework，已确认）：
+
+- 读卡器路线：`TKSmartCard`（iOS 9+）——⚠ 外置 CCID 读卡器对第三方 App 的
+  可见性无官方文档（Apple 论坛有报错），待真机验证
+- NFC 路线：iOS 26+ `TKSmartCardSlotManager.createNFCSlot` + Info.plist
+  `iso7816.select-identifiers`（YubiKey 5 NFC；iPhone 16 真机 iOS 27 可直接验）
+
+**验收**：CanoKey（Ed25519）→ sshd 认证通过（先 macOS 后 iOS）；iOS 上读卡器 /
+NFC 任一通道打通即可。
+
+**范围排除**：RSA / ECDSA → M3c；WebAuthn / FIDO2 → M3d；PIV 不做。
+
+### M3c — OpenPGP 其他算法（RSA / ECDSA）—— ⏸ 不急着做
+
+优先级在 M3a / M3b 之后。参考实现 `openpgp-card-ssh-agent` 已覆盖三算法，
+增量只是转换层：
+
+- RSA：`authenticate_for_hash` 自动拼 DigestInfo（卡加 PKCS#1 填充）；服务端走
+  `rsa-sha2-256/512`（OpenSSH 8.8+ 默认禁 `ssh-rsa`）
+- ECDSA：卡返回定长 raw r‖s → 拆两半 → SSH mpint（约 30 行，参考其 `src/ssh.rs`）
+- 估工：每算法约半天到一天（含测试）。开启条件：M3b 绿 + 有 RSA/ECDSA 卡的实测需求
+
+### M3d — WebAuthn 安全密钥（sk-ecdsa）—— ⏸ 不急着做
+
+- iOS `ASAuthorizationSecurityKeyPublicKeyCredentialProvider`（iOS 15+，系统 UI
+  驱动 NFC/USB-C；Blink Shell 已商用）
+- russh 依赖的 ssh-key 支持 sk-* 公钥（已实测）；sk 签名格式含 flags+counter，需自写
+- ⚠ 风险：RP ID `"ssh:"` 能否被 iOS 接受（待实测）；服务端需 OpenSSH >8.2 且
+  编译了 sk 支持（macOS 自带 sshd 没有）
+- 与卡路线零共享（除 russh Signer 接缝）；估工独立 1~2 周。开启条件：M3b 绿后另立
 
 ### M4 — 产品化与合规
 
@@ -755,7 +802,7 @@ flutter/Cargokit 全权负责。M0b 的 Xcode 工程建法在 git 历史的
       performAction 与 "\n" 插入两条路），fork 侧去重修复，
       terminal_view ref 7f89795 → 21d04c2
 - [x] M1-b 缩减为小屏布局验收，并入 M2a
-- [ ] M2a / M3 / M3a / M3b(spike) / M4 / M5
+- [ ] M2a / M3 / M3a / M3b / M3c(不急) / M3d(不急) / M4 / M5
 
 **关于提交**
 
