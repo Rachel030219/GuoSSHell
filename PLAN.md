@@ -399,9 +399,13 @@ synchronizable 条目。（iOS 硬规则：`kSecClassKey` 不参与 iCloud Keych
 
 ### M3b — 硬件密钥：OpenPGP 卡 Ed25519 —— 已立项（2026-09-23 拍板）
 
-**验证先行（不阻塞，不等 M3/M3a）**：macOS 上用现有 CanoKeys Canokey（认证槽
-Ed25519，已插本机）把「卡签名 → SSH 认证」全链路验通（抄 `openpgp-card-ssh-agent`
-的转换逻辑）；真机 iPhone 16（iOS 27）可验 NFC 卡槽。
+**验证先行（不阻塞，不等 M3/M3a）**：
+
+- ✅ **macOS 全链路已验通（2026-09-23）**：CanoKeys Canokey（认证槽 Ed25519）→
+  `openpgp-card-ssh-agent` → 本机 russh 测试服务器，`ssh-ed25519` 签名认证成功。
+  顺带验证两条事实：macOS 上 PC/SC 需要 `com.apple.security.smartcard`
+  entitlement、GnuPG scdaemon 会独占锁卡
+- 待验（iPhone 16，iOS 27）：USB-C 直插 + NFC 轻触两条通道（见「iOS 传输层」）
 
 **前置：M3a 完成**。先有文件私钥认证再上外置卡——两者走同一套上游认证机制，
 文件私钥先把路径验通（见 §5 M3a）。
@@ -427,10 +431,15 @@ Ed25519，已插本机）把「卡签名 → SSH 认证」全链路验通（抄 
 **iOS 传输层**（复用 `card-backend` trait 自写 iOS 后端——iOS SDK 无
 PCSC.framework，已确认）：
 
-- 读卡器路线：`TKSmartCard`（iOS 9+）——⚠ 外置 CCID 读卡器对第三方 App 的
-  可见性无官方文档（Apple 论坛有报错），待真机验证
+- 读卡器路线：`TKSmartCard`（iOS 9+）。**前提修正（2026-09-23）**：Apple 官方
+  部署指南确认 iPhone/iPad 从 iOS 16 / iPadOS 16.1 起支持外置 CCID 读卡器
+  （"plug in a smart card reader"，无需第三方驱动）；iPhone 15+（USB-C）在系统
+  WebAuthn 流程支持 USB-C 安全密钥（Yubico 兼容表，2025-11 更新）。→ 现有
+  CanoKey 直插 iPhone 16（USB-C）即可验
 - NFC 路线：iOS 26+ `TKSmartCardSlotManager.createNFCSlot` + Info.plist
-  `iso7816.select-identifiers`（YubiKey 5 NFC；iPhone 16 真机 iOS 27 可直接验）
+  `iso7816.select-identifiers`。⚠ YubiKey 的 OpenPGP/PIV 只在 USB 接触接口暴露
+  （NFC 只给 FIDO2/OATH/OTP，官方原文待复核）——**YubiKey 5 NFC 走不了
+  OpenPGP NFC**；用户的 CanoKey 是 USB+NFC 双接口，OpenPGP-over-NFC 待实测
 
 **验收**：CanoKey（Ed25519）→ sshd 认证通过（先 macOS 后 iOS）；iOS 上读卡器 /
 NFC 任一通道打通即可。
