@@ -11,11 +11,26 @@ import 'frame_terminal.dart';
 ///   状态存于 [FrameTerminal]，软键盘的下一个按键同样带得上修饰键。
 /// * 其余按键：短按抬起发一次；长按（Flutter 手势识别器默认阈值）触发时
 ///   先发一个、之后按 [_keyRepeatInterval] 自动重复，抬起即停。
+/// * 复制/粘贴：动作键，不参与自动重复；复制键在无选区时置灰
+///   （[canCopy] 由页面的 TerminalController 驱动，[extraListen] 带它重建）。
 /// 用户自定义排布留给设置体系（M3+）。
 class TerminalKeyBar extends StatefulWidget {
   final FrameTerminal terminal;
+  final Listenable? extraListen;
+  final bool Function() canCopy;
+  final VoidCallback onCopy;
+  final VoidCallback onPaste;
+  final VoidCallback onToggleKeyboard;
 
-  const TerminalKeyBar({super.key, required this.terminal});
+  const TerminalKeyBar({
+    super.key,
+    required this.terminal,
+    required this.canCopy,
+    required this.onCopy,
+    required this.onPaste,
+    required this.onToggleKeyboard,
+    this.extraListen,
+  });
 
   @override
   State<TerminalKeyBar> createState() => _TerminalKeyBarState();
@@ -88,7 +103,7 @@ class _TerminalKeyBarState extends State<TerminalKeyBar> {
       child: SafeArea(
         top: false,
         child: ListenableBuilder(
-          listenable: widget.terminal,
+          listenable: Listenable.merge([widget.terminal, widget.extraListen]),
           builder: (context, _) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -104,6 +119,7 @@ class _TerminalKeyBarState extends State<TerminalKeyBar> {
                   ),
                 _modifierCap(context, scheme, 'ctrl', 'Ctrl'),
                 _modifierCap(context, scheme, 'alt', 'Alt'),
+                _actionCap(context, scheme, '⌨', widget.onToggleKeyboard),
                 _cap(
                   context,
                   scheme,
@@ -114,6 +130,13 @@ class _TerminalKeyBarState extends State<TerminalKeyBar> {
                 ),
               ]),
               _buildRow([
+                _actionCap(
+                  context,
+                  scheme,
+                  '复制',
+                  widget.canCopy() ? widget.onCopy : null,
+                ),
+                _actionCap(context, scheme, '粘贴', widget.onPaste),
                 for (final char in _symbolRow)
                   _cap(
                     context,
@@ -183,6 +206,38 @@ class _TerminalKeyBarState extends State<TerminalKeyBar> {
           color: lit ? scheme.primaryContainer : null,
         ),
         child: child,
+      ),
+    );
+  }
+
+  /// 动作键帽（复制/粘贴）：单发、无自动重复；action 为 null 时置灰。
+  Widget _actionCap(
+    BuildContext context,
+    ColorScheme scheme,
+    String label,
+    VoidCallback? action,
+  ) {
+    final enabled = action != null;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? action : null,
+      child: Container(
+        width: 48,
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: enabled ? scheme.outline : scheme.outline.withValues(alpha: 0.4),
+          ),
+          borderRadius: BorderRadius.circular(17),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: enabled ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.4),
+          ),
+        ),
       ),
     );
   }

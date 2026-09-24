@@ -11,9 +11,10 @@ use secrecy::SecretString;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use rshell_m0::rshell_core::{
-    AuthenticationKind, ConnectionProfile, HostKeyDecision, InteractionRequest,
-    InteractionResponse, KeyCode, KeyModifiers, RenderFrame, ResolvedTerminalProfile,
-    TerminalInput, TerminalOverrides, TerminalSettingsV1, TerminalSize, TransportKind, Viewport,
+    AuthenticationKind, CellPosition, ConnectionProfile, HostKeyDecision, InteractionRequest,
+    InteractionResponse, KeyCode, KeyModifiers, MouseButton, MouseEventKind, RenderFrame,
+    ResolvedTerminalProfile, SelectionRange, TerminalInput, TerminalMouseEvent, TerminalOverrides,
+    TerminalSettingsV1, TerminalSize, TransportKind, Viewport,
 };
 use rshell_m0::rshell_session::{
     AuthPlan, DefaultTerminalEngine, KnownHostsVerifier, NativeSshTransport, SessionTransport,
@@ -22,8 +23,9 @@ use rshell_m0::rshell_session::{
 
 use crate::frame_codec::pack_runs;
 use crate::signals::{
-    ConnectRequest, DisconnectRequest, FrameUpdate, InputRequest, PerfStats, ResizeRequest,
-    SessionState, SessionStatus,
+    ClipboardText, ConnectRequest, CopyRequest, DisconnectRequest, FrameUpdate, InputRequest,
+    MouseRequest, PerfStats, ResizeRequest, SelectionRequest, SelectionState, SessionState,
+    SessionStatus,
 };
 
 const NO_CURSOR: i32 = -1;
@@ -35,6 +37,9 @@ enum SessionCommand {
     Resize(TerminalSize),
     Disconnect,
     Input(TerminalInput),
+    Mouse(TerminalMouseEvent),
+    Selection(SelectionRequest),
+    Copy,
 }
 
 /// 常驻任务：接住 Dart 的三种请求，把 Resize/Disconnect 转交给当前会话。
@@ -44,6 +49,9 @@ pub async fn supervisor() {
     let resize_rx = ResizeRequest::get_dart_signal_receiver();
     let disconnect_rx = DisconnectRequest::get_dart_signal_receiver();
     let input_rx = InputRequest::get_dart_signal_receiver();
+    let mouse_rx = MouseRequest::get_dart_signal_receiver();
+    let selection_rx = SelectionRequest::get_dart_signal_receiver();
+    let copy_rx = CopyRequest::get_dart_signal_receiver();
     let mut session_tx: Option<UnboundedSender<SessionCommand>> = None;
     // 连接表单阶段 Dart 就会量格子并发 ResizeRequest（此刻还没有会话）。
     // 记住最新几何，spawn 会话时带上——否则首个 PTY 尺寸只能用请求里的缺省值。
@@ -90,6 +98,26 @@ pub async fn supervisor() {
                     if let Some(input) = terminal_input_from_request(pack.message) {
                         let _ = tx.send(SessionCommand::Input(input));
                     }
+                }
+            }
+            pack = mouse_rx.recv() => {
+                let Some(pack) = pack else { break };
+                if let Some(tx) = &session_tx {
+                    if let Some(event) = mouse_event_from_request(pack.message) {
+                        let _ = tx.send(SessionCommand::Mouse(event));
+                    }
+                }
+            }
+            pack = selection_rx.recv() => {
+                let Some(pack) = pack else { break };
+                if let Some(tx) = &session_tx {
+                    let _ = tx.send(SessionCommand::Selection(pack.message));
+                }
+            }
+            pack = copy_rx.recv() => {
+                let Some(_pack) = pack else { break };
+                if let Some(tx) = &session_tx {
+                    let _ = tx.send(SessionCommand::Copy);
                 }
             }
         }
@@ -226,11 +254,16 @@ async fn run_session(
         rows: size.rows,
     };
     let mut stats = PerfWindow::new();
+    // 选区权威在引擎（M2a 方案 A）：连接的整个生命周期里持有当前选区，
+    // 每次 render 都带上它——内容重排/滚动时高亮跟着引擎走，不是 Dart 侧
+    // 自己维护一套坐标。
+    let mut selection: Option<SelectionRange> = None;
 
     // 连接建立即送第一帧（欢迎横幅可能已经进了引擎）。
-    if let Ok(frame) = engine.render(viewport, None) {
+    if let Ok(frame) = engine.render(viewport, selection) {
         send_frame(&frame, &mut stats, 0);
     }
+    send_selection_state(None);
     if let Some(perf) = stats.maybe_report() {
         perf.send_signal_to_dart();
     }
@@ -248,7 +281,7 @@ async fn run_session(
                             }
                             if delta.dirty {
                                 let render_start = std::time::Instant::now();
-                                match engine.render(viewport, None) {
+                                match engine.render(viewport, selection) {
                                     Ok(frame) => {
                                         let render_us = micros_since(render_start);
                                         send_frame(&frame, &mut stats, render_us);
@@ -302,7 +335,7 @@ async fn run_session(
                         rinf::debug_print!("window-change failed: {error:?}");
                     }
                     let render_start = std::time::Instant::now();
-                    if let Ok(frame) = engine.render(viewport, None) {
+                    if let Ok(frame) = engine.render(viewport, selection) {
                         let render_us = micros_since(render_start);
                         send_frame(&frame, &mut stats, render_us);
                     }
@@ -327,6 +360,47 @@ async fn run_session(
                         }
                     }
                 }
+                Some(SessionCommand::Mouse(event)) => {
+                    // 鼠标上报未激活（shell 等）时 encode 返回 Err——远端不要
+                    // 这类事件，静默忽略，触摸行为不变（M2a）。
+                    match engine.encode_mouse(event) {
+                        Ok(bytes) if !bytes.is_empty() => {
+                            if let Err(error) = transport.write(&bytes).await {
+                                send_status(
+                                    SessionState::Failed,
+                                    format!("mouse write: {error:?}"),
+                                );
+                                break;
+                            }
+                        }
+                        Ok(_) | Err(_) => {}
+                    }
+                }
+                Some(SessionCommand::Selection(request)) => {
+                    // 选区变化：更新引擎持有的选区 → 重渲染发帧（高亮跟着
+                    // 内容走）→ 把引擎的选区原样回显（Dart 用它对耳朵/气泡定位）。
+                    selection = selection_range_from_request(request);
+                    let render_start = std::time::Instant::now();
+                    match engine.render(viewport, selection) {
+                        Ok(frame) => {
+                            let render_us = micros_since(render_start);
+                            send_frame(&frame, &mut stats, render_us);
+                        }
+                        Err(error) => {
+                            send_status(SessionState::Failed, format!("render: {error:?}"));
+                            break;
+                        }
+                    }
+                    send_selection_state(selection);
+                }
+                Some(SessionCommand::Copy) => {
+                    // 取文在引擎里（跨行拼接、裁行尾空格都由它负责）。
+                    let text = match selection {
+                        Some(range) => engine.selected_text(range).unwrap_or_default(),
+                        None => String::new(),
+                    };
+                    ClipboardText { text }.send_signal_to_dart();
+                }
                 Some(SessionCommand::Disconnect) | None => {
                     send_status(SessionState::Closed, "disconnect".to_owned());
                     break;
@@ -341,6 +415,51 @@ async fn run_session(
 
 fn send_status(state: SessionState, detail: String) {
     SessionStatus { state, detail }.send_signal_to_dart();
+}
+
+/// 把引擎当前持有的选区回显给 Dart。保留 anchor/focus 的原始角色不排序
+/// （`SelectionRange` 渲染/取文时才 `ordered`），拖耳朵越过对端时角色才不会乱。
+fn send_selection_state(selection: Option<SelectionRange>) {
+    let state = match selection {
+        Some(range) => SelectionState {
+            has_selection: true,
+            anchor_row: range.start.stable_row,
+            anchor_col: range.start.column,
+            focus_row: range.end.stable_row,
+            focus_col: range.end.column,
+        },
+        None => SelectionState {
+            has_selection: false,
+            anchor_row: 0,
+            anchor_col: 0,
+            focus_row: 0,
+            focus_col: 0,
+        },
+    };
+    state.send_signal_to_dart();
+}
+
+/// 边界上的选区请求 → 上游 `SelectionRange`。`clear` 或端点相同都归为「无选区」。
+fn selection_range_from_request(request: SelectionRequest) -> Option<SelectionRange> {
+    if request.clear {
+        return None;
+    }
+    let start = CellPosition {
+        stable_row: request.anchor_row,
+        column: request.anchor_col,
+    };
+    let end = CellPosition {
+        stable_row: request.focus_row,
+        column: request.focus_col,
+    };
+    if start == end {
+        return None;
+    }
+    Some(SelectionRange {
+        start,
+        end,
+        rectangular: request.rectangular,
+    })
 }
 
 /// 把边界上的键名解析成上游 `KeyCode`（PLAN §5 M2：编码权威在 Rust）。
@@ -388,6 +507,41 @@ fn terminal_input_from_request(request: InputRequest) -> Option<TerminalInput> {
     let code = parse_key_code(&request.key)?;
     Some(TerminalInput::Key {
         code,
+        modifiers: KeyModifiers {
+            shift: request.shift,
+            control: request.control,
+            alt: request.alt,
+            super_key: false,
+        },
+    })
+}
+
+/// 触摸鼠标请求 → 上游事件。滚轮必须走 Scroll；press/release 带普通键。
+fn mouse_event_from_request(request: MouseRequest) -> Option<TerminalMouseEvent> {
+    let kind = match request.kind.as_str() {
+        "press" => MouseEventKind::Press,
+        "release" => MouseEventKind::Release,
+        "scroll" => MouseEventKind::Scroll,
+        _ => return None,
+    };
+    let button = match request.button.as_str() {
+        "left" => Some(MouseButton::Left),
+        "middle" => Some(MouseButton::Middle),
+        "right" => Some(MouseButton::Right),
+        "wheel_up" => Some(MouseButton::WheelUp),
+        "wheel_down" => Some(MouseButton::WheelDown),
+        _ => None,
+    };
+    Some(TerminalMouseEvent {
+        kind,
+        button,
+        cell: CellPosition {
+            stable_row: i64::from(request.row),
+            column: request.col,
+        },
+        viewport_row: request.row,
+        pixel_x: 0,
+        pixel_y: 0,
         modifiers: KeyModifiers {
             shift: request.shift,
             control: request.control,
@@ -485,6 +639,8 @@ fn send_frame(frame: &RenderFrame, stats: &mut PerfWindow, render_us: u32) {
         seq,
         cursor_col,
         cursor_row,
+        mouse_reporting: frame.mouse_reporting,
+        alternate_screen: frame.alternate_screen,
     }
     .send_signal_to_dart(binary);
 }

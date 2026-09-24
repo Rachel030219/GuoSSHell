@@ -62,6 +62,44 @@ pub struct InputRequest {
     pub alt: bool,
 }
 
+/// 触摸鼠标事件（M2a 鼠标转发的边界）。
+///
+/// Rust 组装成 `TerminalMouseEvent` 交给 `engine.encode_mouse`；远端没开
+/// 鼠标上报时 encode 返回 Err，静默忽略（触摸行为完全不变）。
+/// 滚轮必须用 `kind: "scroll"`（上游 validate 会拒绝「滚轮走 press」）。
+#[derive(Deserialize, DartSignal)]
+pub struct MouseRequest {
+    /// press / release / scroll
+    pub kind: String,
+    /// left / middle / right / wheel_up / wheel_down
+    pub button: String,
+    pub col: u16,
+    pub row: u16,
+    pub shift: bool,
+    pub control: bool,
+    pub alt: bool,
+}
+
+/// 选区变更（M2a 方案 A：选区的权威在引擎，M2a 之前我们在 Dart 侧重造了一遍）。
+///
+/// `clear = true` 表示清除，其余字段忽略；否则 anchor/focus 是**引擎绝对行号**
+/// （`stable_row`，不是视口行号——Dart 已换算好）。两个端点不分先后，引擎
+/// 渲染/取文时自己排序，所以拖耳朵越过对端不用特殊处理。
+#[derive(Deserialize, DartSignal)]
+pub struct SelectionRequest {
+    pub clear: bool,
+    pub anchor_row: i64,
+    pub anchor_col: u16,
+    pub focus_row: i64,
+    pub focus_col: u16,
+    /// 方块选（列选区）。M2a 只做整行，恒 false。
+    pub rectangular: bool,
+}
+
+/// 复制当前选区（取文在引擎里，见 `TerminalEngine::selected_text`）。
+#[derive(Deserialize, DartSignal)]
+pub struct CopyRequest {}
+
 // ── Rust → Dart ──────────────────────────────────────────────────────────────
 
 #[derive(Serialize, SignalPiece)]
@@ -91,6 +129,31 @@ pub struct FrameUpdate {
     /// 光标的视口内坐标（列, 行）。`-1` 表示不可见（隐藏或滚出视口）。
     pub cursor_col: i32,
     pub cursor_row: i32,
+    /// 远端开启了鼠标上报（DECSET 1000/1002/1003）。Dart 据此决定
+    /// 触摸点击/滚轮是转发给远端还是保持本地行为（M2a）。
+    pub mouse_reporting: bool,
+    /// 远端在备用屏（vim/less 等 TUI）。
+    pub alternate_screen: bool,
+}
+
+/// 选区回显（引擎当前持有选区的原样投影）。
+///
+/// Dart 用它给耳朵/气泡定位。`anchor`/`focus` **保留 Dart 传入时的角色、不排序**
+/// ——拖耳朵越过对端时角色才不会乱（引擎自己渲染/取文时才排序）。
+#[derive(Serialize, RustSignal)]
+pub struct SelectionState {
+    pub has_selection: bool,
+    pub anchor_row: i64,
+    pub anchor_col: u16,
+    pub focus_row: i64,
+    pub focus_col: u16,
+}
+
+/// 引擎取出的选区文本。引擎已按自己的规则跨行拼接、裁掉行尾空格（`text.rs`
+/// 的 `selection_text`），Dart 直接进剪贴板。无选区时是空串。
+#[derive(Serialize, RustSignal)]
+pub struct ClipboardText {
+    pub text: String,
 }
 
 /// 每 5 秒一条的性能汇总（M1 帧率验收的数字来源）。

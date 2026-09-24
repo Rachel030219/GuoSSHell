@@ -43,7 +43,7 @@ dependencies:
   terminal_view:
     git:
       url: https://github.com/Rachel030219/terminal_view.git
-      ref: "21d04c20197c6058717b3704454d229b388f2257"
+      ref: "a3d42d9a840215bba81994ddade59a6c6cdead9d"
   rinf: ^8.10.1
 
 dev_dependencies:

@@ -1,4 +1,8 @@
 import 'package:flutter/foundation.dart';
+// 我们的 fork 没把这个类放进公开导出面，但锚点机制依赖它（行身份），
+// 属于有意的实现级依赖，fork 收紧导出面前先直接引。
+// ignore: implementation_imports
+import 'package:terminal_view/src/utils/circular_buffer.dart';
 import 'package:terminal_view/terminal_view.dart';
 
 import 'frame.dart';
@@ -23,12 +27,21 @@ class TextInputEvent extends TerminalInputEvent {
   const TextInputEvent(this.text);
 }
 
+/// 触摸鼠标事件（M2a）。仅在远端开启鼠标上报时产生。
+class MouseInputEvent extends TerminalInputEvent {
+  final TerminalMouseButton button;
+  final TerminalMouseButtonState buttonState;
+  final CellOffset position;
+  const MouseInputEvent(this.button, this.buttonState, this.position);
+}
+
 /// 一条池化行：BufferLine 对象 + 它当初被填充时的 run 快照。
 /// 快照逐字段比对相等 → 复用对象、不动 version → 行 Picture 缓存命中。
 class _PooledLine {
   final BufferLine line;
   final List<FrameRun> runs;
-  _PooledLine(this.line, this.runs);
+  final bool wrapped;
+  _PooledLine(this.line, this.runs, this.wrapped);
 }
 
 /// `TerminalSurface` 的帧驱动实现（PLAN §6.1 M2 fork 决定，方案 A）。
@@ -46,7 +59,7 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
   FrameTerminal({this.onInput, this.onResize}) {
     // 首帧前也要可画：fork 的 paint 会对 height-1 做 clamp，height 为 0
     // 直接越界（上游 Terminal 永远至少一行，从没暴露过这个边界）。
-    _lines.add(BufferLine(_cols));
+    _buffer.push(BufferLine(_cols));
   }
 
   /// 键盘/IME/粘贴的出口。返回值表示事件是否被接受。
@@ -55,10 +68,49 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
   /// 视口尺寸变化（列/行/pixel），由 fork 的 render 在布局期回调。
   void Function(int cols, int rows, int pixelWidth, int pixelHeight)? onResize;
 
-  final List<BufferLine> _lines = [];
+  /// 行的身份容器。fork 的 CellAnchor 挂在 BufferLine 对象上，锚点的
+  /// 行号 = owner.index，而 index 只有经 IndexAwareCircularBuffer 收养
+  /// （attached）才有效——M2a 起所有行都住在这里。
+  /// 容量固定富余（1024 行，覆盖 iPad 分屏与 M4 的滚回窗口）；
+  /// _length 只能靠 push 长大，帧变高时补齐、变矮时留尾巴（画不到）。
+  final IndexAwareCircularBuffer<BufferLine> _buffer =
+      IndexAwareCircularBuffer<BufferLine>(1024);
+
+  /// 上一帧的行对象表：key 是帧里的 `stable_row`（引擎的绝对行号）。
+  /// 用行身份而不是屏幕位置，内容滚动时对象跟着内容走。
   final Map<int, _PooledLine> _pool = {};
+
+  /// 视口行 → 引擎绝对行（`stable_row`）。选区的坐标换算要用：
+  /// fork 给的是视口坐标，引擎要的是绝对行号。M2a 无滚回，两者一一对应。
+  final List<int> _stableRows = [];
+
+  /// 绝对行 → 视口行（唯一；帧内不会重复）。收引擎回显时用。
+  final Map<int, int> _viewportByStableRow = {};
+
+  bool _mouseReporting = false;
+  bool _alternateScreen = false;
+
+  /// 远端鼠标上报（随帧下发）。开启后触摸点击/滚轮转发远端。
+  set mouseReporting(bool value) {
+    if (_mouseReporting == value) return;
+    _mouseReporting = value;
+    notifyListeners();
+  }
+
+  /// 远端备用屏（随帧下发）。fork 的滚动归属判定要用。
+  set alternateScreen(bool value) {
+    if (_alternateScreen == value) return;
+    _alternateScreen = value;
+    notifyListeners();
+  }
+
   int _cols = 80;
   int _rows = 24;
+  /// 缓冲里「有效」的行数（= 最新一帧的 rows）。
+  /// 不能直接用 `_buffer.length`：帧变矮时旧行还挂在尾部（fork 没暴露
+  /// 删行 API），若把物理长度当高度，那些旧行会被当成缓冲的一部分——
+  /// 实机症状：键盘弹出后旧的下部内容留在屏上、滚动后重复出现。
+  int _height = 1;
   int _cursorX = 0;
   int _cursorY = 0;
   bool _cursorVisible = false;
@@ -74,40 +126,58 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
     _cursorY = frame.cursorRow.clamp(0, frame.rows - 1);
     _cursorVisible = frame.cursorCol >= 0 && frame.cursorRow >= 0;
 
+    // 行池：key = stable_row。同一行的内容没变就复用同一对象（Picture
+    // 缓存与选区锚点都靠对象身份）；内容变了才换新对象。
     final next = <int, _PooledLine>{};
     final lines = <BufferLine>[];
     for (final row in frame.lines) {
-      final signature = _signatureOf(row.runs);
-      // 同签名可能对应多行（整屏空白行），共享同一个对象反而让
-      // 它们的 Picture 也共享——fork 的缓存按对象身份命中。
-      var pooled = next[signature] ?? _pool[signature];
-      if (pooled == null || !_runsEqual(pooled.runs, row.runs)) {
-        pooled = _PooledLine(_buildLine(row), row.runs);
-      }
-      next[signature] = pooled;
+      final pooled = _reusable(row) ??
+          _PooledLine(_buildLine(row), row.runs, row.wrapped);
+      next[row.stableRow] = pooled;
       lines.add(pooled.line);
     }
     _pool
       ..clear()
       ..addAll(next);
-    _lines
+
+    // 本帧用到的对象集合：判断某个旧对象的内容是否还在（在 = 锚点已跟着
+    // 对象走到新位置，不需要处理）。
+    // 行池按位置铺开：新行补进缓冲、位置上的旧对象换成新对象。选区不再挂
+    // 锚点（权威在引擎），所以不做锚点迁移。
+    _stableRows
       ..clear()
-      ..addAll(lines);
+      ..addAll([for (final row in frame.lines) row.stableRow]);
+    _viewportByStableRow.clear();
+    for (var i = 0; i < _stableRows.length; i++) {
+      _viewportByStableRow[_stableRows[i]] = i;
+    }
+
+    while (_buffer.length < lines.length) {
+      _buffer.push(lines[_buffer.length]);
+    }
+    for (var i = 0; i < lines.length; i++) {
+      _buffer[i] = lines[i];
+    }
+    _height = lines.length;
     notifyListeners();
   }
 
-  /// run 快照的快速签名（内容比对仍会做全量校验，防哈希碰撞）。
-  static int _signatureOf(List<FrameRun> runs) {
-    var hash = 0x1fffffff & runs.length;
-    for (final run in runs) {
-      hash = 0x1fffffff & (hash * 31 + run.start);
-      hash = 0x1fffffff & (hash * 31 + run.len);
-      hash = 0x1fffffff & (hash * 31 + run.attrs);
-      hash = 0x1fffffff & (hash * 31 + run.text.hashCode);
-      hash = 0x1fffffff & (hash * 31 + run.fg.hashCode);
-      hash = 0x1fffffff & (hash * 31 + run.bg.hashCode);
-    }
-    return hash;
+  /// 视口行 → 引擎绝对行。越界返回 null。
+  int? stableRowAt(int viewportRow) {
+    if (viewportRow < 0 || viewportRow >= _stableRows.length) return null;
+    return _stableRows[viewportRow];
+  }
+
+  /// 引擎绝对行 → 视口行。不在当前视口内返回 null（选区画不出耳朵）。
+  int? viewportRowForStable(int stableRow) => _viewportByStableRow[stableRow];
+
+  /// 该 stable_row 上一帧的行对象在内容仍相同时可以复用。
+  _PooledLine? _reusable(FrameRow row) {
+    final pooled = _pool[row.stableRow];
+    if (pooled == null) return null;
+    if (pooled.wrapped != row.wrapped) return null;
+    if (!_runsEqual(pooled.runs, row.runs)) return null;
+    return pooled;
   }
 
   static bool _runsEqual(List<FrameRun> a, List<FrameRun> b) {
@@ -148,7 +218,7 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
   /// 把一行 run 展开回 BufferLine：按列填充，宽字符占 2 列（第二列
   /// 只带颜色不带字形），run 覆盖范围内剩余列留空白（内容 0、颜色同 run）。
   BufferLine _buildLine(FrameRow row) {
-    final line = BufferLine(_cols);
+    final line = BufferLine(_cols, isWrapped: row.wrapped);
     for (final run in row.runs) {
       final fg = _encodeColor(run.fg, foreground: true);
       final bg = _encodeColor(run.bg, foreground: false);
@@ -245,10 +315,10 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
   // ── TerminalBufferSurface（adapter 自身兼任）──
 
   @override
-  int get height => _lines.length;
+  int get height => _height;
 
   @override
-  BufferLine lineAt(int index) => _lines[index];
+  BufferLine lineAt(int index) => _buffer[index];
 
   @override
   int get cursorX => _cursorX;
@@ -257,26 +327,69 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
   @override
   int get absoluteCursorY => _cursorY;
 
-  /// M2a 之前选区未接：null 让 fork 走「单格选区」回退路径，
-  /// 页面侧用 no-op 选区 controller 兜住（见 terminal_page.dart）。
-  @override
-  BufferRangeLine? getWordBoundary(CellOffset position) => null;
+  /// 切词（长按选词的边界规则）：与 fork 的 Buffer 同一套分隔符
+  /// （NUL/空白/`.`/`:`/`-`/`\`/`"`/`*`/`+`/`/`）。CJK 连续段成一个词。
+  static const Set<int> _wordSeparators = {
+    0,
+    0x20,
+    0x2e,
+    0x3a,
+    0x2d,
+    0x5c,
+    0x22,
+    0x2a,
+    0x2b,
+    0x2f,
+  };
 
   @override
-  CellAnchor createAnchor(int x, int y) =>
-      CellAnchor(x.clamp(0, _cols - 1), owner: _lineAtOrNull(y));
+  BufferRangeLine? getWordBoundary(CellOffset position) {
+    if (position.y < 0 || position.y >= _height) return null;
+    final line = _buffer[position.y];
+    var start = position.x;
+    var end = position.x;
+    while (start > 0 && !_wordSeparators.contains(line.getCodePoint(start - 1))) {
+      start--;
+    }
+    while (end < _cols && !_wordSeparators.contains(line.getCodePoint(end))) {
+      end++;
+    }
+    if (start == end) return null;
+    return BufferRangeLine(CellOffset(start, position.y), CellOffset(end, position.y));
+  }
+
+  @override
+  CellAnchor createAnchor(int x, int y) {
+    final line = _buffer[y.clamp(0, _height - 1)];
+    return line.createAnchor(x.clamp(0, _cols - 1));
+  }
 
   @override
   CellAnchor createAnchorFromOffset(CellOffset offset) =>
-      CellAnchor(offset.x.clamp(0, _cols - 1), owner: _lineAtOrNull(offset.y));
-
-  BufferLine? _lineAtOrNull(int y) =>
-      y >= 0 && y < _lines.length ? _lines[y] : null;
+      createAnchor(offset.x, offset.y);
 
   @override
   String getText([BufferRange? range]) {
-    // M2a 实现按选区取文；M2 里选区被 no-op controller 拦住，走不到这里。
-    throw UnimplementedError('selection text lands in M2a');
+    range ??= BufferRangeLine(
+      CellOffset(0, 0),
+      CellOffset(_cols - 1, _height - 1),
+    );
+    range = range.normalized;
+    final builder = StringBuffer();
+    for (final segment in range.toSegments()) {
+      if (segment.line < 0 || segment.line >= _height) continue;
+      final line = _buffer[segment.line];
+      // 换行规则与 fork 的 Buffer.getText 一致：起始行/首行/wrapped
+      // 行前不插换行（软换行的物理行拼回一段）。
+      if (!(segment.line == range.begin.y || segment.line == 0 || line.isWrapped)) {
+        builder.write('\n');
+      }
+      // 行尾空格要裁掉：上游在 wire 上把空白格发成**字面空格**
+      // （rshell-session render.rs 的 blank_cell 用 " "），fork 的
+      // 裁尾逻辑只认内容 0，不裁的话每行都拖着一串到行宽的空格。
+      builder.write(line.getText(segment.start, segment.end).trimRight());
+    }
+    return builder.toString();
   }
 
   // ── TerminalSurface ──
@@ -297,10 +410,11 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
   CursorStyle get cursor => _cursorStyle;
 
   @override
-  MouseMode get mouseMode => MouseMode.none; // 鼠标转发是 M2a
+  MouseMode get mouseMode =>
+      _mouseReporting ? MouseMode.clickOnly : MouseMode.none;
 
   @override
-  bool get isUsingAltBuffer => false; // alt 信息随帧下发是 M2a 的事
+  bool get isUsingAltBuffer => _alternateScreen;
 
   @override
   void resize(int newWidth, int newHeight, [int? pixelWidth, int? pixelHeight]) {
@@ -401,7 +515,14 @@ class FrameTerminal with ChangeNotifier implements TerminalSurface, TerminalBuff
     TerminalMouseButtonState buttonState,
     CellOffset position,
   ) {
-    return false; // 鼠标转发是 M2a
+    // 鼠标上报没开：不消费，fork 回退到本地行为（聚焦/滚动）。
+    if (!_mouseReporting) return false;
+    _emit(MouseInputEvent(
+      button,
+      buttonState,
+      CellOffset(position.x.clamp(0, _cols - 1), position.y.clamp(0, _rows - 1)),
+    ));
+    return true;
   }
 
   bool _emit(TerminalInputEvent event) {

@@ -4,7 +4,9 @@
 > 这份文件是实现期的唯一参考。所有结论都标注了证据来源；标「实测」的都是本机跑出来的，可复现。
 
 - 上游基线：`hugefiver/rsHell` @ `b2ab8656079225dc2c920c24f5d9e0124f4f83e1`（2026-09-14，MIT），
-  **作为 pin 住 rev 的 git 依赖**（上游源码不进本仓库，且**零改动**；见 `rust/UPSTREAM.md`）
+  **作为 pin 住 rev 的 git 依赖**（上游源码不进本仓库；见 `rust/UPSTREAM.md`）。
+  **「上游零改动」是手段不是目的**：设计上明显不合理、或挡住必要能力时该改就改，
+  按 §9 的 fork 规则走（fork 到自己仓库、换 `rev`、在 UPSTREAM.md 记录改了哪几行、为什么）。
 - 应用名：**GuoSSHell**
 - 开发环境：macOS（Apple Silicon）· Xcode 16+ · Flutter 3.x
   （**本机的具体版本号、工具绝对路径、真机清单、签名配置等一律不入库**，见 §7）
@@ -541,6 +543,22 @@ painter 不违反铁律 4。
 fork 保持通用。滚动锁底部，scrollback 留 M4；选区/粘贴/鼠标留 M2a。
 勘察全文：`docs/survey-terminal-view-2026-09-16.md`。
 
+**M2a 选区决定（2026-09-24）：**
+选区权威在**引擎**（上游 `SelectionRange` 的坐标就是绝对行），Dart 不再自建锚点
+——之前在 `TerminalController` 里重造的一套扛下三类 bug（键盘开合选区消失又出现、
+拖左耳朵上移被清、拖过对端不换角色），全部废弃。链路：fork 手势（选词/拖选/手柄拖动）
+→ `TerminalController.onSelectionIntent` 上报意图 → App 换算成 `stable_row` 发
+`SelectionRequest` → 引擎持有选区、每次 `render(viewport, selection)` 都带上 →
+回显 `SelectionState` → App 按当前帧把绝对行投影回视口，喂 fork 的纯坐标
+`setExternalSelection`。帧的 stable→视口映射一变就重新投影（滚动/重排后高亮跟内容走）；
+拖动进行中映射不变，乐观更新不会被迟到的回显顶掉。手柄用**官方控件**
+（`material/cupertinoTextSelectionHandleControls.buildHandle`）画在 fork 的 widget 层
+（`selection_handles.dart`），与高亮同一坐标来源；手柄是覆盖手势，点它不再触发
+tap-down 清选区（所以官方的 translucent 在这里要换成 opaque）。复制走 `CopyRequest`
+→ 引擎 `selected_text`（跨行拼行、裁尾空格都是引擎的职责）→ `ClipboardText` →
+剪贴板 + 发清除。选区菜单按钮用官方 `ContextMenuButtonType.copy/paste`
+（文案随 Flutter 本地化，接受英文）。fork 侧 API 变化随 fork 仓库自己的提交记录。
+
 ### 6.2 明确不用
 
 | 东西 | 为什么不用 |
@@ -620,13 +638,16 @@ fork 保持通用。滚动锁底部，scrollback 留 M4；选区/粘贴/鼠标�
 2. **M3 的凭证 UI 形态**：钥匙串存密码「每次连接都读」还是「读一次缓存在内存」，
    影响 Face ID / 自动填充的介入点。等 M3 再定。
 3. **什么时候需要 fork 上游 —— git 依赖的第一个真实代价。**
-   目前上游零改动是**成立的**，但有两个已知的、可能逼我们 fork 的需求：
+   目前上游零改动是**成立的**，但有三个已知的、可能逼我们 fork 的需求：
    - **把 iOS 不可用的三个传输（`local` / `pty` / `system_ssh`）从编译图里摘掉**，
      而不是靠链接器裁符号。现在靠 `-Wl,-dead_strip` 能压到 0（§3.2），所以**不急**；
      但如果哪天想做 App Store 的静态审查友好度，或者要减 `.a` 的 65 MB，就得 fork 加 feature gate。
    - **给 `rshell-platform` 加真正的 iOS 分支**（它现在只分 `windows`/`unix`）。
      §2 里列过它「需要 iOS 分支」，但那可能是「实现时才发现不需要」——
      等到 M0-c（内网权限）或 M3（keyring）真的碰到壁垒再决定。
+   - **bracketed paste**：上游 `TerminalDisplayModes` 没有暴露 `BRACKETED_PASTE`
+     （见 `docs/followups/20260923_bracketed-paste-上游缺display-modes.md`）。
+     属于「上游漏了一个字段」型的小改动，是当前最可能的第一个 fork 点。
    **决策规则**：一旦要改上游，就 fork 到自己的仓库，把 `rev=` 换成 fork 的 commit；
    在 `rust/UPSTREAM.md` 里记下改了哪几行、为什么。
 4. **自动发现（mDNS）要不要做**：本期明确不做，但如果 M0-c 的手填体验在局域网里太差，
